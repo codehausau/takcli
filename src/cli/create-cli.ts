@@ -3,6 +3,7 @@ import { Command, CommanderError } from "commander";
 import { getCliVersion } from "../core/version.js";
 import { writeJson } from "./output.js";
 import { createCompletionCommand, createHiddenCompletionCommand } from "./completion.js";
+import { createCotCommand } from "./commands/cot.js";
 import { createDoctorCommand } from "./commands/doctor.js";
 import { createProfileCommand } from "./commands/profile.js";
 import { createStatusCommand } from "./commands/status.js";
@@ -18,6 +19,7 @@ export function createCli(io: IO = createProcessIo()): Command {
     .version(getCliVersion(), "-V, --version", "Show the current TAKCLI version.");
 
   program.addCommand(createCompletionCommand(io));
+  program.addCommand(createCotCommand(io));
   program.addCommand(createDoctorCommand(io));
   program.addCommand(createStatusCommand(io));
   program.addCommand(createProfileCommand(io));
