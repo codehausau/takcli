@@ -85,4 +85,37 @@ describe("profile resolution", () => {
     expect(profile.server).toBe("https://127.0.0.1:9443");
     expect(profile.tls.insecureSkipVerify).toBe(true);
   });
+
+  it("allows ad-hoc port overrides", () => {
+    const profile = resolveProfileTarget(
+      {
+        currentProfile: "local",
+        profiles: {
+          local: {
+            auth: {},
+            ports: {},
+            server: "https://tak.example.internal:8446",
+            tls: {
+              insecureSkipVerify: false
+            }
+          }
+        },
+        schemaVersion: 1
+      },
+      {
+        apiPortOverride: 19446,
+        cotPortOverride: 18089,
+        enrollmentPortOverride: 18443,
+        federationPortOverride: 18444,
+        serverOverride: "https://127.0.0.1:9443"
+      }
+    );
+
+    expect(profile.ports).toEqual({
+      api: 19446,
+      cot: 18089,
+      enrollment: 18443,
+      federation: 18444
+    });
+  });
 });
