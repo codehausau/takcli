@@ -42,6 +42,10 @@ export function normalizeServerInput(input: string): string {
 export function resolveProfileTarget(
   config: TakCliConfig,
   options: {
+    apiPortOverride?: number;
+    cotPortOverride?: number;
+    enrollmentPortOverride?: number;
+    federationPortOverride?: number;
     insecureSkipVerifyOverride?: boolean;
     profileName?: string;
     serverOverride?: string;
@@ -64,10 +68,18 @@ export function resolveProfileTarget(
     host: url.hostname,
     name: selectedName,
     ports: {
-      api: url.port ? Number(url.port) : selectedProfile?.ports.api ?? DEFAULT_PORTS.api,
-      cot: selectedProfile?.ports.cot ?? DEFAULT_PORTS.cot,
-      enrollment: selectedProfile?.ports.enrollment ?? DEFAULT_PORTS.enrollment,
-      federation: selectedProfile?.ports.federation ?? DEFAULT_PORTS.federation
+      api:
+        options.apiPortOverride ??
+        (url.port ? Number(url.port) : selectedProfile?.ports.api ?? DEFAULT_PORTS.api),
+      cot: options.cotPortOverride ?? selectedProfile?.ports.cot ?? DEFAULT_PORTS.cot,
+      enrollment:
+        options.enrollmentPortOverride ??
+        selectedProfile?.ports.enrollment ??
+        DEFAULT_PORTS.enrollment,
+      federation:
+        options.federationPortOverride ??
+        selectedProfile?.ports.federation ??
+        DEFAULT_PORTS.federation
     },
     server: normalizedServer,
     source: selectedProfile ? (options.profileName ? "named" : "current") : "ad-hoc",
