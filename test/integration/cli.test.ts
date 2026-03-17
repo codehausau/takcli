@@ -181,7 +181,21 @@ describe("TAKCLI integration", () => {
 
     const status = createMemoryIo();
     let exitCode = await runCli(
-      ["status", "--server", `https://127.0.0.1:${address.port}`, "--insecure", "--json"],
+      [
+        "status",
+        "--server",
+        `https://127.0.0.1:${address.port}`,
+        "--api-port",
+        String(address.port),
+        "--enrollment-port",
+        String(address.port),
+        "--federation-port",
+        String(address.port),
+        "--cot-port",
+        String(address.port),
+        "--insecure",
+        "--json"
+      ],
       status.io
     );
 
@@ -192,7 +206,21 @@ describe("TAKCLI integration", () => {
 
     const doctor = createMemoryIo();
     exitCode = await runCli(
-      ["doctor", "--server", `https://127.0.0.1:${address.port}`, "--insecure", "--json"],
+      [
+        "doctor",
+        "--server",
+        `https://127.0.0.1:${address.port}`,
+        "--api-port",
+        String(address.port),
+        "--enrollment-port",
+        String(address.port),
+        "--federation-port",
+        String(address.port),
+        "--cot-port",
+        String(address.port),
+        "--insecure",
+        "--json"
+      ],
       doctor.io
     );
 

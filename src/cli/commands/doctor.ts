@@ -14,6 +14,14 @@ function parseTimeout(value: string): number {
   return parsed;
 }
 
+function parsePort(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0 || parsed > 65535) {
+    throw new CliError(`Invalid port: ${value}`);
+  }
+  return parsed;
+}
+
 export function createDoctorCommand(io: IO): Command {
   return new Command("doctor")
     .description("Run TAK server diagnostics against the active or supplied target.")
@@ -21,6 +29,18 @@ export function createDoctorCommand(io: IO): Command {
     .addOption(new Option("--json", "Emit JSON output"))
     .addOption(new Option("--profile <name>", "Use a named TAK profile"))
     .addOption(new Option("--server <url>", "Override the server target for this command"))
+    .addOption(new Option("--api-port <port>", "Override API port for this command").argParser(parsePort))
+    .addOption(
+      new Option("--enrollment-port <port>", "Override enrollment port for this command").argParser(
+        parsePort
+      )
+    )
+    .addOption(
+      new Option("--federation-port <port>", "Override federation port for this command").argParser(
+        parsePort
+      )
+    )
+    .addOption(new Option("--cot-port <port>", "Override CoT port for this command").argParser(parsePort))
     .addOption(new Option("--insecure", "Skip TLS verification for this command"))
     .addOption(new Option("--timeout <ms>", "Probe timeout in milliseconds").default("5000"))
     .addOption(new Option("--verbose", "Enable verbose output"))
@@ -31,6 +51,10 @@ export function createDoctorCommand(io: IO): Command {
       const timeoutMs = parseTimeout(command.opts().timeout);
       const loaded = await loadConfig(options.config, { allowMissing: true });
       const profile = resolveProfileTarget(loaded.config, {
+        apiPortOverride: rawOptions.apiPort,
+        cotPortOverride: rawOptions.cotPort,
+        enrollmentPortOverride: rawOptions.enrollmentPort,
+        federationPortOverride: rawOptions.federationPort,
         insecureSkipVerifyOverride: rawOptions.insecure ? true : undefined,
         profileName: options.profile,
         serverOverride: options.server
