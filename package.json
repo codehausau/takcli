@@ -1,6 +1,6 @@
 {
   "name": "@codehaus-au/takcli",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Operator CLI for TAK workflows.",
   "type": "module",
   "bin": {
