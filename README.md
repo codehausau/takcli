@@ -17,12 +17,12 @@ npm install -g @codehaus-au/takcli
 
 ### Convenience script
 ```bash
-curl -fsSL https://raw.githubusercontent.com/<your-org>/takcli/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/codehausau/takcli/main/scripts/install.sh | bash
 ```
 
 ### Docker
 ```bash
-docker run --rm ghcr.io/<your-org>/takcli:latest version
+docker run --rm ghcr.io/codehausau/takcli:latest version
 ```
 
 ## Quick start
