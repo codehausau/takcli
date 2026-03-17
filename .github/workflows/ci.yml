@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+
+      - uses: actions/setup-node@v4
+        with:
+          cache: pnpm
+          node-version: 22
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+      - name: Pack npm tarball
+        run: pnpm pack
+
+      - name: Smoke test npm install
+        run: |
+          PREFIX="$(mktemp -d)"
+          PACKAGE_FILE="$(ls *.tgz)"
+          npm install --global --prefix "${PREFIX}" "./${PACKAGE_FILE}"
+          "${PREFIX}/bin/takcli" version
+
+      - name: Smoke test install script
+        run: |
+          PREFIX="$(mktemp -d)"
+          PACKAGE_FILE="$(ls *.tgz)"
+          TAKCLI_INSTALL_SOURCE="./${PACKAGE_FILE}" TAKCLI_NPM_PREFIX="${PREFIX}" bash scripts/install.sh
+          "${PREFIX}/bin/takcli" version
+
+      - name: Smoke test Docker image
+        run: |
+          docker build -t takcli-smoke .
+          docker run --rm takcli-smoke version

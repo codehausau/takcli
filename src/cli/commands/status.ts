@@ -1,0 +1,81 @@
+import { Command, Option } from "commander";
+
+import { loadConfig } from "../../core/config-store.js";
+import { resolveProfileTarget } from "../../core/profile-resolution.js";
+import { collectStatusSummary } from "../../tak/doctor.js";
+import { renderTable, writeJson, writeSection } from "../output.js";
+import { CliError, getGlobalOptions, type IO } from "../runtime.js";
+
+function parseTimeout(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new CliError(`Invalid timeout: ${value}`);
+  }
+  return parsed;
+}
+
+export function createStatusCommand(io: IO): Command {
+  return new Command("status")
+    .description("Show a lightweight TAK server status summary.")
+    .addOption(new Option("--config <path>", "Override the config file path"))
+    .addOption(new Option("--json", "Emit JSON output"))
+    .addOption(new Option("--profile <name>", "Use a named TAK profile"))
+    .addOption(new Option("--server <url>", "Override the server target for this command"))
+    .addOption(new Option("--insecure", "Skip TLS verification for this command"))
+    .addOption(new Option("--timeout <ms>", "Probe timeout in milliseconds").default("5000"))
+    .addOption(new Option("--verbose", "Enable verbose output"))
+    .action(async function () {
+      const command = this as Command;
+      const options = getGlobalOptions(command);
+      const rawOptions = command.opts();
+      const timeoutMs = parseTimeout(command.opts().timeout);
+      const loaded = await loadConfig(options.config, { allowMissing: true });
+      const profile = resolveProfileTarget(loaded.config, {
+        insecureSkipVerifyOverride: rawOptions.insecure ? true : undefined,
+        profileName: options.profile,
+        serverOverride: options.server
+      });
+
+      const summary = await collectStatusSummary(loaded, profile, timeoutMs);
+
+      if (options.json) {
+        writeJson(io, summary);
+        if (!summary.ok) {
+          throw new CliError("TAK status is degraded.", 1, summary);
+        }
+        return;
+      }
+
+      writeSection(io, "Target", [
+        `Config: ${summary.configPath}`,
+        `Profile: ${summary.profile.name ?? "(ad-hoc)"}`,
+        `Server: ${summary.profile.server}`,
+        `DNS: ${summary.dns.ok ? summary.dns.address : summary.dns.error ?? "unresolved"}`
+      ]);
+
+      writeSection(
+        io,
+        "Endpoints",
+        renderTable(
+          ["ENDPOINT", "PORT", "TCP", "TLS", "HTTP"],
+          summary.endpoints.map((endpoint) => [
+            endpoint.name,
+            String(endpoint.port),
+            endpoint.tcp.ok ? "ok" : "fail",
+            endpoint.tls ? (endpoint.tls.ok ? "ok" : "fail") : "-",
+            endpoint.http
+              ? endpoint.http.ok
+                ? String(endpoint.http.statusCode ?? "ok")
+                : "fail"
+              : "-"
+          ])
+        )
+      );
+
+      writeSection(io, "Summary", [`Overall: ${summary.overall}`]);
+
+      if (!summary.ok) {
+        throw new CliError("TAK status is degraded.", 1, summary);
+      }
+    });
+}
