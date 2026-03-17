@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.0](https://github.com/codehausau/takcli/compare/takcli-v0.2.0...takcli-v0.3.0) (2026-03-17)
+
+
+### Features
+
+* add cot command family ([3430a0b](https://github.com/codehausau/takcli/commit/3430a0b77c576e4e3d6fb30d4d2909b977cc9f7a))
+* add cot command family ([1a3b978](https://github.com/codehausau/takcli/commit/1a3b978ff60920f7d01c8a308ab1b20ee41d225e))
+
+
+### Bug Fixes
+
+* support ad-hoc port overrides in health checks ([0820b84](https://github.com/codehausau/takcli/commit/0820b84ff9ea779dfec005756d97aab450c16ec3))
+
 ## [0.2.0](https://github.com/codehausau/takcli/compare/takcli-v0.1.0...takcli-v0.2.0) (2026-03-17)
 
 
