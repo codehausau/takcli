@@ -34,6 +34,17 @@ describe("completion support", () => {
     expect(suggestions).toContain("add");
   });
 
+  it("suggests nested cot subcommands", () => {
+    const program = createCli({
+      stderr: () => undefined,
+      stdout: () => undefined
+    });
+
+    const suggestions = getCompletionSuggestions(program, ["cot", "q"]);
+
+    expect(suggestions).toContain("query");
+  });
+
   it("suggests command options", () => {
     const program = createCli({
       stderr: () => undefined,
@@ -43,5 +54,16 @@ describe("completion support", () => {
     const suggestions = getCompletionSuggestions(program, ["doctor", "--i"]);
 
     expect(suggestions).toContain("--insecure");
+  });
+
+  it("suggests cot command options", () => {
+    const program = createCli({
+      stderr: () => undefined,
+      stdout: () => undefined
+    });
+
+    const suggestions = getCompletionSuggestions(program, ["cot", "follow", "--r"]);
+
+    expect(suggestions).toContain("--raw");
   });
 });

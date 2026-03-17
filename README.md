@@ -6,6 +6,7 @@ The first milestone focuses on:
 - profile and active-context management
 - TAK server diagnostics with `doctor`
 - TAK server operational summaries with `status`
+- CoT query, target discovery, injection, and stream following with `cot`
 - human-friendly output with stable `--json`
 
 ## Install
@@ -38,6 +39,8 @@ Run diagnostics:
 ```bash
 takcli doctor
 takcli status
+takcli cot query --uid my-uid
+takcli cot targets
 takcli doctor --json
 takcli status --server https://127.0.0.1:8446 --insecure --json
 ```
@@ -85,6 +88,10 @@ profiles:
 - `takcli completion <bash|zsh|fish>`
 - `takcli doctor`
 - `takcli status`
+- `takcli cot query`
+- `takcli cot targets`
+- `takcli cot inject`
+- `takcli cot follow`
 - `takcli profile list`
 - `takcli profile add`
 - `takcli profile use`
@@ -96,7 +103,40 @@ profiles:
 These command families are intentionally not shipped in v1 yet:
 - `deploy`
 - `admin`
-- `cot`
+
+## CoT workflows
+
+Query the latest CoT event for a UID:
+
+```bash
+takcli cot query --uid alpha --server https://127.0.0.1:8446 --insecure
+takcli cot query --uid alpha --server https://127.0.0.1:8446 --insecure --raw
+```
+
+List recent CoT targets from the last 24 hours:
+
+```bash
+takcli cot targets --server https://127.0.0.1:8446 --insecure
+takcli cot targets --start-date 2026-03-16 --end-date 2026-03-17 --limit 25 --json
+```
+
+Inject a generated CoT event over the live TLS CoT port:
+
+```bash
+takcli cot inject \
+  --uid alpha \
+  --type a-f-G-U-C \
+  --lat -35.3 \
+  --lon 149.1 \
+  --callsign "Eagle 1"
+```
+
+Follow the live CoT stream:
+
+```bash
+takcli cot follow
+takcli cot follow --limit 10 --json
+```
 
 ## Development
 
