@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.1](https://github.com/codehausau/takcli/compare/takcli-v0.4.0...takcli-v0.4.1) (2026-03-19)
+
+
+### Bug Fixes
+
+* default deploy image tag to latest ([6f39e29](https://github.com/codehausau/takcli/commit/6f39e29b4e55ff078170d86bfc173402fec8ed5b))
+* validate deploy certificate passwords ([08af270](https://github.com/codehausau/takcli/commit/08af2705292a1e3147a717f222190012f30af6f2))
+* validate deploy passwords and default image tag to latest ([44269d0](https://github.com/codehausau/takcli/commit/44269d085dc4cf88d468c792785fd24dd3fcdc89))
+
 ## [0.4.0](https://github.com/codehausau/takcli/compare/takcli-v0.3.0...takcli-v0.4.0) (2026-03-19)
 
 
