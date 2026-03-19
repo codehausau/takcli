@@ -21,6 +21,7 @@ import type {
 
 const DEFAULT_REPO_URL = "https://github.com/TAK-Product-Center/Server.git";
 const DEFAULT_REGISTRY = "docker.io/codehausau";
+const MIN_CERTIFICATE_PASSWORD_LENGTH = 6;
 
 function defaultDeploymentName(): string {
   return `tak-${new Date().toISOString().slice(0, 10)}`;
@@ -117,6 +118,22 @@ async function collectComposeEnvironmentValues(
       secret: true
     }))
   };
+}
+
+function validateComposeEnvironmentValues(values: ComposeEnvironmentValues): void {
+  const passwordFields = [
+    ["Certificate authority password", values.caPass],
+    ["TAK Server certificate password", values.takserverCertPass],
+    ["Admin certificate password", values.adminCertPass]
+  ] as const;
+
+  for (const [label, value] of passwordFields) {
+    if (value.length < MIN_CERTIFICATE_PASSWORD_LENGTH) {
+      throw new CliError(
+        `${label} must be at least ${MIN_CERTIFICATE_PASSWORD_LENGTH} characters because TAK certificate tooling requires keystore passwords of that length.`
+      );
+    }
+  }
 }
 
 function buildPlanLines(request: DeployRequest, gitCommit: string): string[] {
@@ -219,6 +236,7 @@ export async function runDeployWizard(
   };
 
   const envValues = await collectComposeEnvironmentValues(options, services.prompt, request);
+  validateComposeEnvironmentValues(envValues);
 
   const clone = await ensureTakServerClone({
     cacheRoot: request.cacheRoot,
