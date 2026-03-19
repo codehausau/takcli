@@ -13,21 +13,6 @@ interface HttpTextResponse {
   url: string;
 }
 
-function withTimeout<T>(label: string, timeoutMs: number, work: () => Promise<T>): Promise<T> {
-  let timer: NodeJS.Timeout | undefined;
-
-  return Promise.race([
-    work().finally(() => {
-      if (timer) {
-        clearTimeout(timer);
-      }
-    }),
-    new Promise<T>((_, reject) => {
-      timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
-    })
-  ]);
-}
-
 function ensureValidTlsPair(profile: ResolvedProfile): void {
   const hasCert = Boolean(profile.tls.certFile);
   const hasKey = Boolean(profile.tls.keyFile);
@@ -57,42 +42,48 @@ async function requestText(
 ): Promise<HttpTextResponse> {
   ensureValidTlsPair(profile);
 
-  return withTimeout("HTTP request", timeoutMs, async () => {
-    const isHttps = url.protocol === "https:";
-    const requestFn = isHttps ? https.request : http.request;
+  const isHttps = url.protocol === "https:";
+  const requestFn = isHttps ? https.request : http.request;
 
-    return new Promise<HttpTextResponse>((resolve, reject) => {
-      const request = requestFn(
-        {
-          ca: profile.tls.caFile ? readFileSync(profile.tls.caFile) : undefined,
-          cert: profile.tls.certFile ? readFileSync(profile.tls.certFile) : undefined,
-          host: url.hostname,
-          key: profile.tls.keyFile ? readFileSync(profile.tls.keyFile) : undefined,
-          method: "GET",
-          path: `${url.pathname}${url.search}`,
-          port: url.port ? Number(url.port) : undefined,
-          rejectUnauthorized: isHttps ? !profile.tls.insecureSkipVerify : undefined,
-          servername: isHttps && !net.isIP(url.hostname) ? url.hostname : undefined
-        },
-        (response) => {
-          const chunks: Buffer[] = [];
-          response.on("data", (chunk: Buffer | string) => {
-            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  return new Promise<HttpTextResponse>((resolve, reject) => {
+    const request = requestFn(
+      {
+        ca: profile.tls.caFile ? readFileSync(profile.tls.caFile) : undefined,
+        cert: profile.tls.certFile ? readFileSync(profile.tls.certFile) : undefined,
+        host: url.hostname,
+        key: profile.tls.keyFile ? readFileSync(profile.tls.keyFile) : undefined,
+        method: "GET",
+        path: `${url.pathname}${url.search}`,
+        port: url.port ? Number(url.port) : undefined,
+        rejectUnauthorized: isHttps ? !profile.tls.insecureSkipVerify : undefined,
+        servername: isHttps && !net.isIP(url.hostname) ? url.hostname : undefined
+      },
+      (response) => {
+        const chunks: Buffer[] = [];
+        response.on("data", (chunk: Buffer | string) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        });
+        response.on("end", () => {
+          clearTimeout(timer);
+          resolve({
+            body: Buffer.concat(chunks).toString("utf8"),
+            statusCode: response.statusCode,
+            statusMessage: response.statusMessage,
+            url: url.toString()
           });
-          response.on("end", () => {
-            resolve({
-              body: Buffer.concat(chunks).toString("utf8"),
-              statusCode: response.statusCode,
-              statusMessage: response.statusMessage,
-              url: url.toString()
-            });
-          });
-        }
-      );
+        });
+      }
+    );
 
-      request.once("error", reject);
-      request.end();
+    const timer = setTimeout(() => {
+      request.destroy(new Error(`HTTP request timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    request.once("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
     });
+    request.end();
   });
 }
 
