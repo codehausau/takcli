@@ -138,6 +138,7 @@ class ReadlinePrompt implements DeployPrompt {
       const cleanup = () => {
         input.off("keypress", onKeypress);
         input.setRawMode(wasRaw);
+        input.pause();
         output.write("\n");
       };
 

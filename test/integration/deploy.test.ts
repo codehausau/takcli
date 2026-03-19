@@ -169,6 +169,8 @@ class RecordingPrompt implements DeployPrompt {
       "Deployment workspace path": "/tmp/takcli-prompt-workspace",
       "Docker image registry namespace": "docker.io/codehausau",
       "Docker image tag": "latest",
+      "Initial WebTAK password": "Str0ng!Bootstrap",
+      "Initial WebTAK username": "admin",
       "Postgres password": "postgres-pass",
       "TAK Server certificate password": "tak-pass",
       "TAK Server git ref": "main",
@@ -195,6 +197,61 @@ class DefaultingPrompt implements DeployPrompt {
 
   async select() {
     return "kubernetes";
+  }
+}
+
+class RetryingPrompt implements DeployPrompt {
+  readonly inputCalls: Array<{ message: string; secret?: boolean }> = [];
+
+  private readonly confirms: boolean[];
+  private readonly values: Record<string, string[]>;
+
+  constructor(options?: {
+    confirms?: boolean[];
+    values?: Record<string, string[]>;
+  }) {
+    this.confirms = options?.confirms ? [...options.confirms] : [false, true];
+    this.values = {
+      "Admin certificate password": ["admin-pass"],
+      "Admin certificate name": ["admin"],
+      "Certificate authority name": ["PromptCA"],
+      "Certificate authority password": ["short", "ca-pass"],
+      "Certificate city/locality": ["Canberra"],
+      "Certificate organization": ["CodeHaus"],
+      "Certificate organizational unit": ["Ops"],
+      "Certificate state/province": ["ACT"],
+      "Deployment data directory": ["/tmp/takcli-retry-data"],
+      "Deployment name": ["retry-demo"],
+      "Deployment workspace path": ["/tmp/takcli-retry-workspace"],
+      "Docker image registry namespace": ["docker.io/codehausau"],
+      "Docker image tag": ["latest"],
+      "Initial WebTAK password": ["Str0ng!Bootstrap"],
+      "Initial WebTAK username": ["admin"],
+      "Postgres password": ["postgres-pass"],
+      "TAK Server certificate password": ["tak-pass"],
+      "TAK Server git ref": ["main"],
+      "TAK certs directory": ["/tmp/takcli-retry-data/certs"],
+      "TAK logs directory": ["/tmp/takcli-retry-data/logs"],
+      ...(options?.values ?? {})
+    };
+  }
+
+  async confirm() {
+    return this.confirms.shift() ?? true;
+  }
+
+  async input(options: { defaultValue?: string; message: string; secret?: boolean }) {
+    this.inputCalls.push({ message: options.message, secret: options.secret });
+    const values = this.values[options.message];
+    if (values && values.length > 0) {
+      return values.shift() as string;
+    }
+
+    return options.defaultValue ?? "value";
+  }
+
+  async select() {
+    return "docker-compose";
   }
 }
 
@@ -382,6 +439,142 @@ describe("deploy integration", () => {
     expect(runner.invocations.some((invocation) => invocation.startsWith("git clone "))).toBe(false);
   });
 
+  it("rejects weak initial WebTAK passwords before cloning", async () => {
+    const repoDir = await createFakeTakServerRepo();
+    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
+    const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-workspace-"));
+    const dataDir = path.join(deploymentRoot, "data");
+    const logsDir = path.join(dataDir, "logs");
+    const certsDir = path.join(dataDir, "certs");
+    const runner = new HybridRunner();
+    const io = createMemoryIo();
+
+    const exitCode = await runCli(
+      [
+        "deploy",
+        "--target",
+        "docker-compose",
+        "--ref",
+        "main",
+        "--repo-url",
+        repoDir,
+        "--cache-root",
+        cacheRoot,
+        "--name",
+        "demo",
+        "--deployment-root",
+        deploymentRoot,
+        "--data-dir",
+        dataDir,
+        "--logs-dir",
+        logsDir,
+        "--certs-dir",
+        certsDir,
+        "--registry",
+        "docker.io/codehausau",
+        "--image-tag",
+        "main",
+        "--postgres-password",
+        "postgres-pass",
+        "--ca-name",
+        "DemoCA",
+        "--ca-pass",
+        "ca-pass",
+        "--state",
+        "ACT",
+        "--city",
+        "Canberra",
+        "--organization",
+        "CodeHaus",
+        "--organizational-unit",
+        "Ops",
+        "--takserver-cert-pass",
+        "tak-pass",
+        "--admin-cert-name",
+        "admin",
+        "--admin-cert-pass",
+        "admin-pass",
+        "--webtak-username",
+        "admin",
+        "--webtak-password",
+        "short",
+        "--yes",
+        "--dry-run"
+      ],
+      io.io,
+      createServices(runner)
+    );
+
+    expect(exitCode).toBe(1);
+    expect(io.readStderr()).toContain("Initial WebTAK password must be at least 15 characters");
+    expect(runner.invocations.some((invocation) => invocation.startsWith("git clone "))).toBe(false);
+  });
+
+  it("rejects WebTAK bootstrap flags for kubernetes deployments", async () => {
+    const repoDir = await createFakeTakServerRepo();
+    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
+    const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-workspace-"));
+    const runner = new HybridRunner();
+    const io = createMemoryIo();
+
+    const exitCode = await runCli(
+      [
+        "deploy",
+        "--target",
+        "kubernetes",
+        "--ref",
+        "main",
+        "--repo-url",
+        repoDir,
+        "--cache-root",
+        cacheRoot,
+        "--name",
+        "demo-k8s",
+        "--deployment-root",
+        deploymentRoot,
+        "--data-dir",
+        path.join(deploymentRoot, "data"),
+        "--logs-dir",
+        path.join(deploymentRoot, "data", "logs"),
+        "--certs-dir",
+        path.join(deploymentRoot, "data", "certs"),
+        "--registry",
+        "docker.io/codehausau",
+        "--postgres-password",
+        "postgres-pass",
+        "--ca-name",
+        "DemoCA",
+        "--ca-pass",
+        "ca-pass",
+        "--state",
+        "ACT",
+        "--city",
+        "Canberra",
+        "--organization",
+        "CodeHaus",
+        "--organizational-unit",
+        "Ops",
+        "--takserver-cert-pass",
+        "tak-pass",
+        "--admin-cert-name",
+        "admin",
+        "--admin-cert-pass",
+        "admin-pass",
+        "--webtak-username",
+        "admin",
+        "--webtak-password",
+        "Str0ng!Bootstrap",
+        "--yes",
+        "--dry-run"
+      ],
+      io.io,
+      createServices(runner)
+    );
+
+    expect(exitCode).toBe(1);
+    expect(io.readStderr()).toContain("only supported for docker-compose deployments");
+  });
+
   it("defaults the main ref to the latest image tag", async () => {
     const repoDir = await createFakeTakServerRepo();
     const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
@@ -511,6 +704,148 @@ describe("deploy integration", () => {
         expect.objectContaining({ message: "Admin certificate password", secret: true })
       ])
     );
+  });
+
+  it("prompts for an initial WebTAK user during interactive compose deploys", async () => {
+    const repoDir = await createFakeTakServerRepo();
+    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
+    const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-prompt-webtak-"));
+    const dataDir = path.join(deploymentRoot, "data");
+    const logsDir = path.join(dataDir, "logs");
+    const certsDir = path.join(dataDir, "certs");
+    const runner = new HybridRunner();
+    const prompt = new RecordingPrompt();
+    const io = createMemoryIo();
+
+    const exitCode = await runCli(
+      [
+        "deploy",
+        "--target",
+        "docker-compose",
+        "--repo-url",
+        repoDir,
+        "--cache-root",
+        cacheRoot,
+        "--name",
+        "demo",
+        "--deployment-root",
+        deploymentRoot,
+        "--data-dir",
+        dataDir,
+        "--logs-dir",
+        logsDir,
+        "--certs-dir",
+        certsDir,
+        "--dry-run"
+      ],
+      io.io,
+      {
+        deploy: {
+          prompt,
+          runner
+        }
+      }
+    );
+
+    expect(exitCode).toBe(0);
+    expect(prompt.inputCalls).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ message: "Initial WebTAK username" }),
+        expect.objectContaining({ message: "Initial WebTAK password", secret: true })
+      ])
+    );
+  });
+
+  it("re-prompts certificate passwords after validation failures", async () => {
+    const repoDir = await createFakeTakServerRepo();
+    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
+    const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-retry-workspace-"));
+    const prompt = new RetryingPrompt();
+    const runner = new HybridRunner();
+    const io = createMemoryIo();
+
+    const exitCode = await runCli(
+      [
+        "deploy",
+        "--target",
+        "docker-compose",
+        "--repo-url",
+        repoDir,
+        "--cache-root",
+        cacheRoot,
+        "--name",
+        "retry-demo",
+        "--deployment-root",
+        deploymentRoot,
+        "--data-dir",
+        path.join(deploymentRoot, "data"),
+        "--logs-dir",
+        path.join(deploymentRoot, "data", "logs"),
+        "--certs-dir",
+        path.join(deploymentRoot, "data", "certs"),
+        "--dry-run"
+      ],
+      io.io,
+      {
+        deploy: {
+          prompt,
+          runner
+        }
+      }
+    );
+
+    expect(exitCode).toBe(0);
+    expect(io.readStderr()).toContain("Certificate authority password must be at least 6 characters");
+    expect(prompt.inputCalls.filter((call) => call.message === "Certificate authority password")).toHaveLength(2);
+  });
+
+  it("re-prompts the initial WebTAK password after validation failures", async () => {
+    const repoDir = await createFakeTakServerRepo();
+    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
+    const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-webtak-retry-"));
+    const prompt = new RetryingPrompt({
+      confirms: [true, true],
+      values: {
+        "Certificate authority password": ["ca-pass"],
+        "Initial WebTAK password": ["short", "Str0ng!Bootstrap"]
+      }
+    });
+    const runner = new HybridRunner();
+    const io = createMemoryIo();
+
+    const exitCode = await runCli(
+      [
+        "deploy",
+        "--target",
+        "docker-compose",
+        "--repo-url",
+        repoDir,
+        "--cache-root",
+        cacheRoot,
+        "--name",
+        "webtak-retry-demo",
+        "--deployment-root",
+        deploymentRoot,
+        "--data-dir",
+        path.join(deploymentRoot, "data"),
+        "--logs-dir",
+        path.join(deploymentRoot, "data", "logs"),
+        "--certs-dir",
+        path.join(deploymentRoot, "data", "certs"),
+        "--dry-run"
+      ],
+      io.io,
+      {
+        deploy: {
+          prompt,
+          runner
+        }
+      }
+    );
+
+    expect(exitCode).toBe(0);
+    expect(io.readStderr()).toContain("Initial WebTAK password must be at least 15 characters");
+    expect(prompt.inputCalls.filter((call) => call.message === "Initial WebTAK password")).toHaveLength(2);
   });
 
   it("defaults the prompted image tag to latest when the ref is main", async () => {
@@ -715,6 +1050,77 @@ describe("deploy integration", () => {
 
     expect(exitCode).toBe(0);
     expect(runner.invocations.some((invocation) => invocation.startsWith("kubectl apply -f "))).toBe(true);
+  });
+
+  it("bootstraps an initial WebTAK user after compose startup when requested", async () => {
+    const repoDir = await createFakeTakServerRepo();
+    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
+    const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-compose-apply-"));
+    const runner = new HybridRunner();
+
+    const exitCode = await runCli(
+      [
+        "deploy",
+        "--target",
+        "docker-compose",
+        "--ref",
+        "main",
+        "--repo-url",
+        repoDir,
+        "--cache-root",
+        cacheRoot,
+        "--name",
+        "apply-compose",
+        "--deployment-root",
+        deploymentRoot,
+        "--data-dir",
+        path.join(deploymentRoot, "data"),
+        "--logs-dir",
+        path.join(deploymentRoot, "data", "logs"),
+        "--certs-dir",
+        path.join(deploymentRoot, "data", "certs"),
+        "--registry",
+        "docker.io/codehausau",
+        "--image-tag",
+        "latest",
+        "--postgres-password",
+        "postgres-pass",
+        "--ca-name",
+        "DemoCA",
+        "--ca-pass",
+        "ca-pass",
+        "--state",
+        "ACT",
+        "--city",
+        "Canberra",
+        "--organization",
+        "CodeHaus",
+        "--organizational-unit",
+        "Ops",
+        "--takserver-cert-pass",
+        "tak-pass",
+        "--admin-cert-name",
+        "admin",
+        "--admin-cert-pass",
+        "admin-pass",
+        "--webtak-username",
+        "admin",
+        "--webtak-password",
+        "Str0ng!Bootstrap",
+        "--yes"
+      ],
+      createMemoryIo().io,
+      createServices(runner)
+    );
+
+    expect(exitCode).toBe(0);
+    expect(
+      runner.invocations.some((invocation) =>
+        invocation.includes("docker compose") &&
+        invocation.includes("exec -T") &&
+        invocation.includes("UserManager.jar usermod -A")
+      )
+    ).toBe(true);
   });
 
   it("reuses an existing clone cache for repeat deploys", async () => {

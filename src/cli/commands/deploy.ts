@@ -33,6 +33,8 @@ function addSharedOptions(command: Command): Command {
     .option("--takserver-cert-pass <password>", "TAK Server certificate password")
     .option("--admin-cert-name <name>", "Admin certificate name")
     .option("--admin-cert-pass <password>", "Admin certificate password")
+    .option("--webtak-username <name>", "Initial WebTAK username for the 8446 login")
+    .option("--webtak-password <password>", "Initial WebTAK password for the 8446 login")
     .option("--dry-run", "Prepare the workspace but do not apply or start the deployment target")
     .option("--yes", "Skip the final confirmation prompt");
 }
@@ -67,6 +69,8 @@ export function createDeployCommand(io: IO, services: DeployServices): Command {
           state: options.state,
           takserverCertPass: options.takserverCertPass,
           target: options.target,
+          webtakPassword: options.webtakPassword,
+          webtakUsername: options.webtakUsername,
           yes: Boolean(options.yes)
         });
       } catch (error) {
