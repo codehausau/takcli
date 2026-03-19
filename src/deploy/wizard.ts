@@ -19,6 +19,7 @@ import type {
 
 const DEFAULT_REPO_URL = "https://github.com/TAK-Product-Center/Server.git";
 const DEFAULT_REGISTRY = "docker.io/codehausau";
+const MIN_CERTIFICATE_PASSWORD_LENGTH = 6;
 
 function defaultDeploymentName(): string {
   return `tak-${new Date().toISOString().slice(0, 10)}`;
@@ -29,6 +30,16 @@ function normalizePath(value: string): string {
     return path.join(os.homedir(), value.slice(2));
   }
   return path.resolve(value);
+}
+
+function defaultImageTagForRef(ref: string): string {
+  const inferredTag = inferImageTag(ref);
+
+  if (!inferredTag || inferredTag === "main") {
+    return "latest";
+  }
+
+  return inferredTag;
 }
 
 async function resolvePromptedValue(
@@ -117,6 +128,22 @@ async function collectDeploymentEnvironmentValues(
   };
 }
 
+function validateDeployEnvironmentValues(values: DeployEnvironmentValues): void {
+  const passwordFields = [
+    ["Certificate authority password", values.caPass],
+    ["TAK Server certificate password", values.takserverCertPass],
+    ["Admin certificate password", values.adminCertPass]
+  ] as const;
+
+  for (const [label, value] of passwordFields) {
+    if (value.length < MIN_CERTIFICATE_PASSWORD_LENGTH) {
+      throw new CliError(
+        `${label} must be at least ${MIN_CERTIFICATE_PASSWORD_LENGTH} characters because TAK certificate tooling requires keystore passwords of that length.`
+      );
+    }
+  }
+}
+
 function buildPlanLines(request: DeployRequest, gitCommit: string): string[] {
   const images = createDeployImages(request.registry, request.imageTag);
   const executionLine = request.dryRun
@@ -190,12 +217,11 @@ export async function runDeployWizard(
     "Docker image registry namespace",
     DEFAULT_REGISTRY
   );
-  const inferredTag = inferImageTag(ref);
   const imageTag = await resolvePromptedValue(
     options.imageTag,
     services.prompt,
     "Docker image tag",
-    inferredTag ?? "latest"
+    defaultImageTagForRef(ref)
   );
 
   const request: DeployRequest = {
@@ -216,6 +242,7 @@ export async function runDeployWizard(
   };
 
   const envValues = await collectDeploymentEnvironmentValues(options, services.prompt, request);
+  validateDeployEnvironmentValues(envValues);
 
   const clone = await ensureTakServerClone({
     cacheRoot: request.cacheRoot,

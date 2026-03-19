@@ -289,12 +289,7 @@ describe("deploy integration", () => {
         "--json"
       ],
       io.io,
-      {
-        deploy: {
-          prompt: new DefaultingPrompt(),
-          runner
-        }
-      }
+      createServices(runner)
     );
 
     expect(exitCode).toBe(0);
@@ -318,6 +313,73 @@ describe("deploy integration", () => {
 
     const envStats = await stat(path.join(deploymentRoot, ".env"));
     expect(envStats.mode & 0o777).toBe(0o600);
+  });
+
+  it("rejects certificate passwords shorter than six characters before cloning", async () => {
+    const repoDir = await createFakeTakServerRepo();
+    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
+    const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-workspace-"));
+    const dataDir = path.join(deploymentRoot, "data");
+    const logsDir = path.join(dataDir, "logs");
+    const certsDir = path.join(dataDir, "certs");
+    const runner = new HybridRunner();
+    const io = createMemoryIo();
+
+    const exitCode = await runCli(
+      [
+        "deploy",
+        "--target",
+        "docker-compose",
+        "--ref",
+        "main",
+        "--repo-url",
+        repoDir,
+        "--cache-root",
+        cacheRoot,
+        "--name",
+        "demo",
+        "--deployment-root",
+        deploymentRoot,
+        "--data-dir",
+        dataDir,
+        "--logs-dir",
+        logsDir,
+        "--certs-dir",
+        certsDir,
+        "--registry",
+        "docker.io/codehausau",
+        "--image-tag",
+        "main",
+        "--postgres-password",
+        "postgres-pass",
+        "--ca-name",
+        "DemoCA",
+        "--ca-pass",
+        "short",
+        "--state",
+        "ACT",
+        "--city",
+        "Canberra",
+        "--organization",
+        "CodeHaus",
+        "--organizational-unit",
+        "Ops",
+        "--takserver-cert-pass",
+        "tak-pass",
+        "--admin-cert-name",
+        "admin",
+        "--admin-cert-pass",
+        "admin-pass",
+        "--yes",
+        "--dry-run"
+      ],
+      io.io,
+      createServices(runner)
+    );
+
+    expect(exitCode).toBe(1);
+    expect(io.readStderr()).toContain("Certificate authority password must be at least 6 characters");
+    expect(runner.invocations.some((invocation) => invocation.startsWith("git clone "))).toBe(false);
   });
 
   it("defaults the main ref to the latest image tag", async () => {
@@ -449,6 +511,64 @@ describe("deploy integration", () => {
         expect.objectContaining({ message: "Admin certificate password", secret: true })
       ])
     );
+  });
+
+  it("defaults the prompted image tag to latest when the ref is main", async () => {
+    const repoDir = await createFakeTakServerRepo();
+    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
+    const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-workspace-"));
+    const dataDir = path.join(deploymentRoot, "data");
+    const logsDir = path.join(dataDir, "logs");
+    const certsDir = path.join(dataDir, "certs");
+    const runner = new HybridRunner();
+    const prompt = new RecordingPrompt();
+    const io = createMemoryIo();
+
+    const exitCode = await runCli(
+      [
+        "deploy",
+        "--target",
+        "docker-compose",
+        "--repo-url",
+        repoDir,
+        "--cache-root",
+        cacheRoot,
+        "--name",
+        "demo",
+        "--deployment-root",
+        deploymentRoot,
+        "--data-dir",
+        dataDir,
+        "--logs-dir",
+        logsDir,
+        "--certs-dir",
+        certsDir,
+        "--yes",
+        "--dry-run",
+        "--json"
+      ],
+      io.io,
+      {
+        deploy: {
+          prompt,
+          runner
+        }
+      }
+    );
+
+    expect(exitCode).toBe(0);
+    expect(prompt.inputCalls).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ message: "Docker image tag" })
+      ])
+    );
+
+    const output = JSON.parse(io.readStdout()) as {
+      compose: {
+        images: { server: string };
+      };
+    };
+    expect(output.compose.images.server).toBe("docker.io/codehausau/takserver-full:latest");
   });
 
   it("prepares a Kubernetes workspace from an official repo clone", async () => {
