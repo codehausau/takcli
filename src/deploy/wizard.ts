@@ -34,6 +34,16 @@ function normalizePath(value: string): string {
   return path.resolve(value);
 }
 
+function defaultImageTagForRef(ref: string): string {
+  const inferredTag = inferImageTag(ref);
+
+  if (!inferredTag || inferredTag === "main") {
+    return "latest";
+  }
+
+  return inferredTag;
+}
+
 async function resolvePromptedValue(
   supplied: string | undefined,
   prompt: DeployServices["prompt"],
@@ -210,12 +220,11 @@ export async function runDeployWizard(
     "Docker image registry namespace",
     DEFAULT_REGISTRY
   );
-  const inferredTag = inferImageTag(ref);
   const imageTag = await resolvePromptedValue(
     options.imageTag,
     services.prompt,
     "Docker image tag",
-    inferredTag ?? "latest"
+    defaultImageTagForRef(ref)
   );
 
   const request: DeployRequest = {
