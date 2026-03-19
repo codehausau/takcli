@@ -128,7 +128,7 @@ export async function prepareComposeWorkspace(options: {
   const deploymentMetadataPath = path.join(options.request.deploymentRoot, "takcli-deployment.yaml");
 
   await writeFile(composeFilePath, renderTakCliComposeYaml(images, options.request), "utf8");
-  await writeFile(envFilePath, renderComposeEnvFile(options.envValues), "utf8");
+  await writeFile(envFilePath, renderComposeEnvFile(options.envValues), { encoding: "utf8", mode: 0o600 });
   await writeFile(
     deploymentMetadataPath,
     YAML.stringify({

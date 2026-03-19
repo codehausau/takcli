@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import process from "node:process";
+import { emitKeypressEvents } from "node:readline";
 import readline from "node:readline/promises";
 
 import { CliError } from "../cli/runtime.js";
@@ -61,9 +62,9 @@ class ReadlinePrompt implements DeployPrompt {
     throw new CliError(`Invalid confirmation response: ${answer}`);
   }
 
-  async input(options: { defaultValue?: string; message: string }): Promise<string> {
+  async input(options: { defaultValue?: string; message: string; secret?: boolean }): Promise<string> {
     const suffix = options.defaultValue ? ` [${options.defaultValue}]` : "";
-    const answer = await this.ask(`${options.message}${suffix}: `);
+    const answer = await this.ask(`${options.message}${suffix}: `, options.secret);
     const trimmed = answer.trim();
     if (trimmed) {
       return trimmed;
@@ -99,9 +100,13 @@ class ReadlinePrompt implements DeployPrompt {
     return matched.value;
   }
 
-  private async ask(prompt: string): Promise<string> {
+  private async ask(prompt: string, secret = false): Promise<string> {
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
       throw new CliError("Interactive deploy prompts require a TTY. Re-run with explicit deploy options.");
+    }
+
+    if (secret) {
+      return await this.askSecret(prompt);
     }
 
     const rl = readline.createInterface({
@@ -114,6 +119,56 @@ class ReadlinePrompt implements DeployPrompt {
     } finally {
       rl.close();
     }
+  }
+
+  private async askSecret(prompt: string): Promise<string> {
+    const input = process.stdin;
+    const output = process.stdout;
+
+    if (!input.isTTY || !output.isTTY || !input.setRawMode) {
+      throw new CliError("Secret deploy prompts require a TTY. Re-run with explicit deploy options.");
+    }
+
+    emitKeypressEvents(input);
+
+    return await new Promise<string>((resolve, reject) => {
+      const wasRaw = input.isRaw ?? false;
+      let value = "";
+
+      const cleanup = () => {
+        input.off("keypress", onKeypress);
+        input.setRawMode(wasRaw);
+        output.write("\n");
+      };
+
+      const onKeypress = (chunk: string, key: { ctrl?: boolean; meta?: boolean; name?: string; sequence?: string }) => {
+        if (key.ctrl && key.name === "c") {
+          cleanup();
+          reject(new CliError("Deployment canceled.", 130));
+          return;
+        }
+
+        if (key.name === "return" || key.name === "enter") {
+          cleanup();
+          resolve(value);
+          return;
+        }
+
+        if (key.name === "backspace") {
+          value = value.slice(0, -1);
+          return;
+        }
+
+        if (!key.ctrl && !key.meta && chunk) {
+          value += chunk;
+        }
+      };
+
+      output.write(prompt);
+      input.setRawMode(true);
+      input.resume();
+      input.on("keypress", onKeypress);
+    });
   }
 }
 

@@ -81,14 +81,16 @@ async function collectComposeEnvironmentValues(
       message: "Admin certificate name"
     })),
     adminCertPass: options.adminCertPass ?? (await prompt.input({
-      message: "Admin certificate password"
+      message: "Admin certificate password",
+      secret: true
     })),
     caName: options.caName ?? (await prompt.input({
       defaultValue: `${normalizedName}-CA`,
       message: "Certificate authority name"
     })),
     caPass: options.caPass ?? (await prompt.input({
-      message: "Certificate authority password"
+      message: "Certificate authority password",
+      secret: true
     })),
     city: options.city ?? (await prompt.input({
       defaultValue: "Unknown",
@@ -103,14 +105,16 @@ async function collectComposeEnvironmentValues(
       message: "Certificate organizational unit"
     })),
     postgresPassword: options.postgresPassword ?? (await prompt.input({
-      message: "Postgres password"
+      message: "Postgres password",
+      secret: true
     })),
     state: options.state ?? (await prompt.input({
       defaultValue: "Unknown",
       message: "Certificate state/province"
     })),
     takserverCertPass: options.takserverCertPass ?? (await prompt.input({
-      message: "TAK Server certificate password"
+      message: "TAK Server certificate password",
+      secret: true
     }))
   };
 }
