@@ -91,6 +91,23 @@ Published package:
 - it expects `docker.io/codehausau/takserver-full` for the server image and upstream `postgis/postgis` for the database by default
 - Kubernetes support is planned as the next deployment milestone
 
+### Guide-driven next features
+
+The strongest follow-on CLI areas from [`TAK_Server_Configuration_Guide.pdf`](/workspaces/tak/tak-server/src/docs/TAK_Server_Configuration_Guide.pdf) are:
+
+- `cert`
+  - CA, server, client, admin, enrollment, and PostgreSQL TLS workflows
+- `auth` / `users`
+  - file users, groups, password reset, bulk user creation, LDAP / AD, OAuth2
+- `inputs`
+  - group filtering, multicast routing, x509 / auth-message assignment behavior
+- `federation`
+  - federate certificates, connections, group mapping, mission disruption tolerance, blockers
+- `observe`
+  - metrics, logs, and data-retention operations
+
+If extending `takcli`, prefer those areas before broadening into lower-value installation wrappers.
+
 ### TAK Server image publishing
 
 - hardened image publishing is blocked on Iron Bank access
