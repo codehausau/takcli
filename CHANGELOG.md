@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.1](https://github.com/codehausau/takcli/compare/takcli-v0.5.0...takcli-v0.5.1) (2026-03-19)
+
+
+### Bug Fixes
+
+* retry deploy secret prompts ([5031926](https://github.com/codehausau/takcli/commit/50319262589e863ae05b62d5b98be1d2fc23933d))
+* retry deploy secret prompts ([d7f4649](https://github.com/codehausau/takcli/commit/d7f464999f91fb57c06846220de97f40df16ce7e))
+
 ## [0.5.0](https://github.com/codehausau/takcli/compare/takcli-v0.4.1...takcli-v0.5.0) (2026-03-19)
 
 
