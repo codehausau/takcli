@@ -2,18 +2,18 @@ import YAML from "yaml";
 import { describe, expect, it } from "vitest";
 
 import {
-  createComposeImages,
-  inferImageTag,
   renderComposeEnvFile,
   renderTakCliComposeYaml
 } from "../../src/deploy/compose.js";
+import { createDeployImages, inferImageTag } from "../../src/deploy/images.js";
+import { renderTakCliKubernetesYaml } from "../../src/deploy/kubernetes.js";
 import { createRefCacheSegment } from "../../src/deploy/repo.js";
 import { checkDeployDependencies } from "../../src/deploy/system.js";
 import type { CommandRunner, DeployRequest } from "../../src/deploy/types.js";
 
 describe("deploy helpers", () => {
   it("infers safe image tags from simple refs", () => {
-    expect(inferImageTag("main")).toBe("main");
+    expect(inferImageTag("main")).toBe("latest");
     expect(inferImageTag("v1.2.3")).toBe("v1.2.3");
     expect(inferImageTag("feature/test")).toBeUndefined();
   });
@@ -60,7 +60,7 @@ describe("deploy helpers", () => {
       yes: true
     };
 
-    const images = createComposeImages(request.registry, request.imageTag);
+    const images = createDeployImages(request.registry, request.imageTag);
     const document = YAML.parse(renderTakCliComposeYaml(images, request)) as {
       services: {
         "tak-database": { image: string };
@@ -73,6 +73,48 @@ describe("deploy helpers", () => {
     expect(document.services.takserver.volumes).toContain("/tmp/tak/data:/opt/tak/data");
     expect(document.services.takserver.volumes).toContain("/tmp/tak/logs:/opt/tak/data/logs");
     expect(document.services.takserver.volumes).toContain("/tmp/tak/certs:/opt/tak/data/certs");
+  });
+
+  it("renders TAKCLI-managed Kubernetes manifests with a namespace, secret, and services", () => {
+    const request: DeployRequest = {
+      certsDir: "/tmp/tak/certs",
+      dataDir: "/tmp/tak/data",
+      deploymentName: "demo-cluster",
+      deploymentRoot: "/tmp/tak/deployments/demo",
+      dryRun: true,
+      flavor: "unhardened",
+      imageTag: "main",
+      logsDir: "/tmp/tak/logs",
+      ref: "main",
+      registry: "docker.io/codehausau",
+      repoUrl: "https://github.com/TAK-Product-Center/Server.git",
+      target: "kubernetes",
+      yes: true
+    };
+
+    const images = createDeployImages(request.registry, request.imageTag);
+    const documents = YAML.parseAllDocuments(renderTakCliKubernetesYaml(images, request, {
+      adminCertName: "admin",
+      adminCertPass: "admin-pass",
+      caName: "TestCA",
+      caPass: "ca-pass",
+      city: "Canberra",
+      organization: "CodeHaus",
+      organizationalUnit: "Ops",
+      postgresPassword: "postgres-pass",
+      state: "ACT",
+      takserverCertPass: "tak-pass"
+    })).map((document) => document.toJSON() as {
+      kind: string;
+      metadata?: { name?: string; namespace?: string };
+      spec?: { type?: string };
+      stringData?: Record<string, string>;
+    });
+
+    expect(documents.find((document) => document.kind === "Namespace")?.metadata?.name).toBe("demo-cluster");
+    expect(documents.find((document) => document.kind === "Secret")?.stringData?.POSTGRES_HOST).toBe("tak-database");
+    expect(documents.find((document) => document.kind === "Service" && document.metadata?.name === "takserver")?.spec?.type)
+      .toBe("LoadBalancer");
   });
 
   it("reports missing deploy dependencies", async () => {
@@ -93,5 +135,22 @@ describe("deploy helpers", () => {
 
     expect(result.missing.map((dependency) => dependency.name)).toContain("docker compose");
     expect(result.missing.map((dependency) => dependency.name)).not.toContain("git");
+  });
+
+  it("only requires kubectl for kubernetes deployments", async () => {
+    const runner: CommandRunner = {
+      async run(command) {
+        if (command === "git") {
+          return { exitCode: 0, stderr: "", stdout: "git version 2.0.0\n" };
+        }
+
+        return { exitCode: 1, stderr: "missing", stdout: "" };
+      }
+    };
+
+    const result = await checkDeployDependencies(runner, "kubernetes");
+
+    expect(result.missing.map((dependency) => dependency.name)).toContain("kubectl");
+    expect(result.missing.map((dependency) => dependency.name)).not.toContain("helm");
   });
 });

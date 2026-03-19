@@ -8,7 +8,10 @@ function addSharedOptions(command: Command): Command {
   return command
     .addOption(new Option("--json", "Emit JSON output"))
     .addOption(
-      new Option("--target <target>", "Deployment target").choices(["docker-compose", "kubernetes"])
+      new Option("--target <target>", "Deployment target (`kubernetes` is experimental)").choices([
+        "docker-compose",
+        "kubernetes"
+      ])
     )
     .option("--ref <ref>", "TAK Server git ref")
     .option("--name <name>", "Deployment name")
@@ -30,13 +33,13 @@ function addSharedOptions(command: Command): Command {
     .option("--takserver-cert-pass <password>", "TAK Server certificate password")
     .option("--admin-cert-name <name>", "Admin certificate name")
     .option("--admin-cert-pass <password>", "Admin certificate password")
-    .option("--dry-run", "Prepare the workspace but do not start docker compose")
+    .option("--dry-run", "Prepare the workspace but do not apply or start the deployment target")
     .option("--yes", "Skip the final confirmation prompt");
 }
 
 export function createDeployCommand(io: IO, services: DeployServices): Command {
   return addSharedOptions(new Command("deploy"))
-    .description("Walk through a TAK Server deployment and execute a published Docker Compose rollout.")
+    .description("Walk through a TAK Server deployment and execute a Docker Compose or experimental Kubernetes rollout.")
     .action(async function () {
       const options = (this as Command).opts();
       try {

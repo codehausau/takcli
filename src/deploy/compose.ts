@@ -4,29 +4,17 @@ import { cp, mkdir, writeFile } from "node:fs/promises";
 import YAML from "yaml";
 
 import { CliError } from "../cli/runtime.js";
+import { createDeployImages } from "./images.js";
 import type {
-  ComposeEnvironmentValues,
   ComposeImageSet,
+  DeployEnvironmentValues,
   ComposeWorkspace,
   DeployRequest
 } from "./types.js";
 
 const FULL_COMPOSE_RELATIVE_PATH = path.join("src", "takserver-core", "docker", "full");
-const DEFAULT_DB_IMAGE = "postgis/postgis:15-3.3";
 
-export function inferImageTag(ref: string): string | undefined {
-  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(ref) ? ref : undefined;
-}
-
-export function createComposeImages(registry: string, imageTag: string): ComposeImageSet {
-  const prefix = registry.replace(/\/+$/, "");
-  return {
-    db: DEFAULT_DB_IMAGE,
-    server: `${prefix}/takserver-full:${imageTag}`
-  };
-}
-
-export function renderComposeEnvFile(values: ComposeEnvironmentValues): string {
+export function renderComposeEnvFile(values: DeployEnvironmentValues): string {
   const lines = [
     ["POSTGRES_PASSWORD", values.postgresPassword],
     ["CA_NAME", values.caName],
@@ -85,7 +73,7 @@ export function renderTakCliComposeYaml(images: ComposeImageSet, request: Deploy
 
 export async function prepareComposeWorkspace(options: {
   clonePath: string;
-  envValues: ComposeEnvironmentValues;
+  envValues: DeployEnvironmentValues;
   gitCommit: string;
   request: DeployRequest;
 }): Promise<ComposeWorkspace> {
@@ -122,7 +110,7 @@ export async function prepareComposeWorkspace(options: {
   const dbDataDir = path.join(options.request.deploymentRoot, "postgresql");
   await mkdir(dbDataDir, { recursive: true });
 
-  const images = createComposeImages(options.request.registry, options.request.imageTag);
+  const images = createDeployImages(options.request.registry, options.request.imageTag);
   const composeFilePath = path.join(options.request.deploymentRoot, "docker-compose.yml");
   const envFilePath = path.join(options.request.deploymentRoot, ".env");
   const deploymentMetadataPath = path.join(options.request.deploymentRoot, "takcli-deployment.yaml");

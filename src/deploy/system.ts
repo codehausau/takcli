@@ -21,12 +21,6 @@ const dependencyHints = {
     win32: "Install Git for Windows: https://git-scm.com/download/win",
     default: "Install Git from https://git-scm.com/downloads"
   },
-  helm: {
-    darwin: "Install Helm: https://helm.sh/docs/intro/install/",
-    linux: "Install Helm: https://helm.sh/docs/intro/install/",
-    win32: "Install Helm: https://helm.sh/docs/intro/install/",
-    default: "Install Helm: https://helm.sh/docs/intro/install/"
-  },
   kubectl: {
     darwin: "Install kubectl: https://kubernetes.io/docs/tasks/tools/",
     linux: "Install kubectl: https://kubernetes.io/docs/tasks/tools/",
@@ -74,7 +68,6 @@ export async function checkDeployDependencies(
     statuses.push(await probeCommand(runner, "docker compose", "docker", ["compose", "version"]));
   } else {
     statuses.push(await probeCommand(runner, "kubectl", "kubectl", ["version", "--client"]));
-    statuses.push(await probeCommand(runner, "helm", "helm", ["version"]));
   }
 
   return {

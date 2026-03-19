@@ -64,15 +64,41 @@ export interface DoctorCheck {
   severity: "error" | "warning";
 }
 
-export interface DoctorReport {
+export interface DoctorSummary {
+  failed: number;
+  passed: number;
+}
+
+export interface TakDoctorReport {
   checks: DoctorCheck[];
   command: "doctor";
   configPath: string;
   generatedAt: string;
+  mode: "tak-server";
   ok: boolean;
   profile: ResolvedProfile;
-  summary: {
-    failed: number;
-    passed: number;
-  };
+  summary: DoctorSummary;
 }
+
+export interface KubernetesDoctorReport {
+  checks: DoctorCheck[];
+  command: "doctor";
+  configPath: string;
+  generatedAt: string;
+  kubernetes: {
+    context?: string;
+    defaultStorageClass?: string;
+    deploymentRoot?: string;
+    kubeconfig?: string;
+    namespace?: {
+      exists: boolean;
+      name: string;
+    };
+    readyNodes?: number;
+  };
+  mode: "kubernetes";
+  ok: boolean;
+  summary: DoctorSummary;
+}
+
+export type DoctorReport = KubernetesDoctorReport | TakDoctorReport;

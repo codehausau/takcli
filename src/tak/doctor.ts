@@ -1,7 +1,7 @@
 import type { ResolvedProfile } from "../core/profile-resolution.js";
 import type { LoadedConfig } from "../core/config-store.js";
 import { probeDns, probeHttp, probeTcp, probeTls } from "./probes.js";
-import type { DoctorCheck, DoctorReport, EndpointStatus, StatusSummary } from "./types.js";
+import type { DoctorCheck, EndpointStatus, StatusSummary, TakDoctorReport } from "./types.js";
 
 export async function collectStatusSummary(
   configInfo: LoadedConfig,
@@ -155,7 +155,7 @@ export async function runDoctor(
   configInfo: LoadedConfig,
   profile: ResolvedProfile,
   timeoutMs: number
-): Promise<DoctorReport> {
+): Promise<TakDoctorReport> {
   const checks: DoctorCheck[] = [
     {
       details: {
@@ -197,6 +197,7 @@ export async function runDoctor(
     command: "doctor",
     configPath: configInfo.path,
     generatedAt: new Date().toISOString(),
+    mode: "tak-server",
     ok: failed === 0,
     profile,
     summary: {
