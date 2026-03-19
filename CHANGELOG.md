@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0](https://github.com/codehausau/takcli/compare/takcli-v0.4.1...takcli-v0.5.0) (2026-03-19)
+
+
+### Features
+
+* add experimental kubernetes support ([da7ed4a](https://github.com/codehausau/takcli/commit/da7ed4a072c3c00e0e6eb7694e1e5133893188ef))
+* add experimental kubernetes support ([b4db2ae](https://github.com/codehausau/takcli/commit/b4db2ae5f86673c6b4df4656e29f05ef53a60128))
+
 ## [0.4.1](https://github.com/codehausau/takcli/compare/takcli-v0.4.0...takcli-v0.4.1) (2026-03-19)
 
 
