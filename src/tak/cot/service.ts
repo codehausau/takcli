@@ -3,8 +3,54 @@ import { buildCotEventXml, parseCotEventXml } from "./xml.js";
 import { fetchCotEventXml, fetchUidSearchResults } from "./http.js";
 import { sendCotEventXml, streamCotEvents } from "./stream.js";
 
+const UID_QUERY_MAX_ATTEMPTS = 3;
+const UID_QUERY_RETRY_DELAY_MS = 750;
+
 function isoDateOnly(date: Date): string {
   return date.toISOString().slice(0, 10);
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function isRetriableUidQueryError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+
+  return [
+    "timed out after",
+    "ECONNRESET",
+    "ECONNREFUSED",
+    "EPIPE",
+    "socket hang up",
+    "Client network socket disconnected"
+  ].some((fragment) => message.includes(fragment));
+}
+
+async function fetchCotEventXmlWithRetry(
+  context: CotRuntimeContext,
+  lookup: { cotId?: number; uid?: string }
+): Promise<string> {
+  const maxAttempts = lookup.uid && lookup.cotId === undefined ? UID_QUERY_MAX_ATTEMPTS : 1;
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await fetchCotEventXml(context.profile, context.timeoutMs, lookup);
+    } catch (error) {
+      lastError = error;
+
+      if (attempt === maxAttempts || !isRetriableUidQueryError(error)) {
+        throw error;
+      }
+
+      await delay(UID_QUERY_RETRY_DELAY_MS * attempt);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
 export function getDefaultCotTargetDateRange(now = new Date()): { endDate: string; startDate: string } {
@@ -15,7 +61,7 @@ export function getDefaultCotTargetDateRange(now = new Date()): { endDate: strin
 }
 
 export async function queryCot(context: CotRuntimeContext, lookup: { cotId?: number; uid?: string }): Promise<CotQueryResult> {
-  const rawXml = await fetchCotEventXml(context.profile, context.timeoutMs, lookup);
+  const rawXml = await fetchCotEventXmlWithRetry(context, lookup);
   const event = parseCotEventXml(rawXml);
 
   return {

@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import tls from "node:tls";
 import { mkdtemp } from "node:fs/promises";
+import { setTimeout as delay } from "node:timers/promises";
 
 import selfsigned from "selfsigned";
 import { afterEach, describe, expect, it } from "vitest";
@@ -126,6 +127,69 @@ describe("TAKCLI CoT integration", () => {
     const output = JSON.parse(io.readStdout()) as { event: { callsign?: string; uid: string } };
     expect(output.event.uid).toBe("alpha");
     expect(output.event.callsign).toBe("Eagle 1");
+  });
+
+  it("retries UID queries when the first lookup times out", async () => {
+    const certs = createCerts();
+    let attempts = 0;
+    const server = https.createServer(
+      {
+        cert: certs.cert,
+        key: certs.private
+      },
+      async (req, res) => {
+        const requestUrl = new URL(req.url ?? "/", "https://127.0.0.1");
+
+        if (requestUrl.pathname !== "/Marti/GetCotData/") {
+          res.writeHead(404);
+          res.end();
+          return;
+        }
+
+        attempts += 1;
+
+        if (attempts === 1) {
+          await delay(100);
+        }
+
+        if (res.destroyed) {
+          return;
+        }
+
+        res.writeHead(200, { "content-type": "application/xml" });
+        res.end(
+          '<event version="2.0" uid="alpha" type="a-f-G-U-C" time="2026-03-17T10:00:00.000Z" start="2026-03-17T10:00:00.000Z" stale="2026-03-17T10:05:00.000Z" how="m-g"><point lat="-35.3" lon="149.1" hae="450" ce="12" le="22"/><detail><contact callsign="Eagle 1"/></detail></event>'
+        );
+      }
+    );
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Expected an IP address.");
+    }
+
+    const io = createMemoryIo();
+    const exitCode = await runCli(
+      [
+        "cot",
+        "query",
+        "--uid",
+        "alpha",
+        "--server",
+        `https://127.0.0.1:${address.port}`,
+        "--insecure",
+        "--timeout",
+        "30",
+        "--json"
+      ],
+      io.io
+    );
+
+    expect(exitCode).toBe(0);
+    expect(attempts).toBeGreaterThanOrEqual(2);
+    const output = JSON.parse(io.readStdout()) as { event: { uid: string } };
+    expect(output.event.uid).toBe("alpha");
   });
 
   it("lists CoT targets and keeps partial rows when enrichment fails", async () => {
