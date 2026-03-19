@@ -10,15 +10,15 @@ Current v1 scope:
 - run diagnostics with `takcli doctor`
 - inspect health with `takcli status`
 - query, summarize, inject, and follow CoT data with `takcli cot`
+- run a compose-first TAK Server deployment wizard with `takcli deploy`
 - support human-readable output and stable `--json`
 - install via npm, convenience script, and Docker
 
 Out of scope for v1:
 
-- full TAK server provisioning
 - plugin SDK
 - TUI
-- deployment automation commands in the binary
+- Kubernetes deployment support in the binary
 
 ## Stack
 
@@ -81,6 +81,29 @@ Published package:
   - `tls.certFile`
   - `tls.keyFile`
   - `tls.insecureSkipVerify`
+
+### Deploy command
+
+- `deploy` currently targets the published unhardened Docker Compose path
+- it clones or reuses the official `TAK-Product-Center/Server` repo in a TAKCLI cache
+- it does not patch the cloned repo in place
+- it generates TAKCLI-owned deployment files in `~/.takcli/deployments/<name>/`
+- it expects `docker.io/codehausau/takserver-full` for the server image and upstream `postgis/postgis` for the database by default
+- Kubernetes support is planned as the next deployment milestone
+
+### TAK Server image publishing
+
+- hardened image publishing is blocked on Iron Bank access
+- current practical path is unhardened image publishing
+- helper script:
+  - `scripts/build-unhardened-takserver-images.sh`
+- supporting notes:
+  - `docs/unhardened-takserver-images.md`
+- the intended manual release flow is:
+  - check out an upstream `tak-server` release tag
+  - run the helper script
+  - review the local build
+  - push the versioned images to `codehausau`
 
 ## Common commands
 

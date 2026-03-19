@@ -23,6 +23,17 @@ describe("completion support", () => {
     expect(suggestions).not.toContain("__complete");
   });
 
+  it("suggests deploy at the top level", () => {
+    const program = createCli({
+      stderr: () => undefined,
+      stdout: () => undefined
+    });
+
+    const suggestions = getCompletionSuggestions(program, ["de"]);
+
+    expect(suggestions).toContain("deploy");
+  });
+
   it("suggests nested profile subcommands", () => {
     const program = createCli({
       stderr: () => undefined,

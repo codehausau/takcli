@@ -1,15 +1,28 @@
 import { Command, CommanderError } from "commander";
 
 import { getCliVersion } from "../core/version.js";
+import { createDefaultDeployServices } from "../deploy/services.js";
+import type { DeployServices } from "../deploy/types.js";
 import { writeJson } from "./output.js";
 import { createCompletionCommand, createHiddenCompletionCommand } from "./completion.js";
 import { createCotCommand } from "./commands/cot.js";
+import { createDeployCommand } from "./commands/deploy.js";
 import { createDoctorCommand } from "./commands/doctor.js";
 import { createProfileCommand } from "./commands/profile.js";
 import { createStatusCommand } from "./commands/status.js";
 import { CliError, createProcessIo, writeError, writeLine, type IO } from "./runtime.js";
 
-export function createCli(io: IO = createProcessIo()): Command {
+export interface CliServices {
+  deploy: DeployServices;
+}
+
+export function createDefaultCliServices(): CliServices {
+  return {
+    deploy: createDefaultDeployServices()
+  };
+}
+
+export function createCli(io: IO = createProcessIo(), services: CliServices = createDefaultCliServices()): Command {
   const program = new Command();
 
   program
@@ -20,6 +33,7 @@ export function createCli(io: IO = createProcessIo()): Command {
 
   program.addCommand(createCompletionCommand(io));
   program.addCommand(createCotCommand(io));
+  program.addCommand(createDeployCommand(io, services.deploy));
   program.addCommand(createDoctorCommand(io));
   program.addCommand(createStatusCommand(io));
   program.addCommand(createProfileCommand(io));
@@ -45,8 +59,12 @@ export function createCli(io: IO = createProcessIo()): Command {
   return program;
 }
 
-export async function runCli(argv: string[], io: IO = createProcessIo()): Promise<number> {
-  const program = createCli(io);
+export async function runCli(
+  argv: string[],
+  io: IO = createProcessIo(),
+  services: CliServices = createDefaultCliServices()
+): Promise<number> {
+  const program = createCli(io, services);
   program.exitOverride();
 
   try {

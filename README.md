@@ -7,6 +7,7 @@ The first milestone focuses on:
 - TAK server diagnostics with `doctor`
 - TAK server operational summaries with `status`
 - CoT query, target discovery, injection, and stream following with `cot`
+- interactive hardened Docker Compose deployment with `deploy`
 - human-friendly output with stable `--json`
 
 ## Install
@@ -41,6 +42,7 @@ takcli doctor
 takcli status
 takcli cot query --uid my-uid
 takcli cot targets
+takcli deploy
 takcli doctor --json
 takcli status --server https://127.0.0.1:8446 --insecure --json
 ```
@@ -92,6 +94,7 @@ profiles:
 - `takcli cot targets`
 - `takcli cot inject`
 - `takcli cot follow`
+- `takcli deploy`
 - `takcli profile list`
 - `takcli profile add`
 - `takcli profile use`
@@ -101,8 +104,58 @@ profiles:
 
 ### Roadmap
 These command families are intentionally not shipped in v1 yet:
-- `deploy`
 - `admin`
+- Kubernetes deployment in `takcli deploy`
+
+## Deploy workflows
+
+`takcli deploy` is a compose-first wizard that:
+- checks for `git`, `docker`, and `docker compose`
+- clones or reuses the official `TAK-Product-Center/Server` repo in `~/.takcli/cache/tak-server`
+- copies the upstream `docker/full` assets into a TAKCLI-managed deployment workspace
+- renders a TAKCLI-owned `.env`, compose file, and deployment metadata beside the upstream copy
+- starts the stack with `docker compose up -d`
+
+The default image sources are:
+- `docker.io/codehausau/takserver-full:<tag>`
+- `postgis/postgis:15-3.3`
+
+Quick example:
+
+```bash
+takcli deploy \
+  --target docker-compose \
+  --ref main \
+  --name tak-demo \
+  --registry docker.io/codehausau \
+  --image-tag main
+```
+
+For non-interactive use, you can provide the required deployment values up front:
+
+```bash
+takcli deploy \
+  --target docker-compose \
+  --ref main \
+  --name tak-demo \
+  --deployment-root ~/.takcli/deployments/tak-demo \
+  --data-dir ~/.takcli/deployments/tak-demo/data \
+  --logs-dir ~/.takcli/deployments/tak-demo/data/logs \
+  --certs-dir ~/.takcli/deployments/tak-demo/data/certs \
+  --registry docker.io/codehausau \
+  --image-tag main \
+  --postgres-password change-me \
+  --ca-name tak-demo-CA \
+  --ca-pass change-me \
+  --state ACT \
+  --city Canberra \
+  --organization CodeHaus \
+  --organizational-unit Ops \
+  --takserver-cert-pass change-me \
+  --admin-cert-name admin \
+  --admin-cert-pass change-me \
+  --yes
+```
 
 ## CoT workflows
 
@@ -147,6 +200,21 @@ pnpm typecheck
 pnpm test
 pnpm build
 ```
+
+## TAK Server Images
+
+The hardened TAK Server Docker images require Iron Bank base images, so the practical publishing path today is the **unhardened** image set.
+
+There is a helper script for building release-tagged unhardened images from an upstream `tak-server` checkout:
+
+```bash
+./scripts/build-unhardened-takserver-images.sh \
+  --tak-server-repo /path/to/tak-server \
+  --tag 5.2-RELEASE-16 \
+  --image-prefix docker.io/codehausau
+```
+
+More detail is in [docs/unhardened-takserver-images.md](/workspaces/tak/takcli/docs/unhardened-takserver-images.md).
 
 ## Shell completions
 
