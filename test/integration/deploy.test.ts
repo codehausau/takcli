@@ -65,6 +65,12 @@ class HybridRunner implements CommandRunner {
     if (command === "docker" && args[0] === "compose") {
       return { exitCode: 0, stderr: "", stdout: "started\n" };
     }
+    if (command === "kubectl" && args[0] === "version") {
+      return { exitCode: 0, stderr: "", stdout: "Client Version: v1.30.0\n" };
+    }
+    if (command === "kubectl" && args[0] === "apply") {
+      return { exitCode: 0, stderr: "", stdout: "manifest applied\n" };
+    }
 
     try {
       const result = await execFileAsync(command, args, {
@@ -94,6 +100,18 @@ class MissingComposeRunner implements CommandRunner {
     }
     if (command === "docker" && args[0] === "--version") {
       return { exitCode: 0, stderr: "", stdout: "Docker version 26.0.0\n" };
+    }
+    return { exitCode: 1, stderr: "missing", stdout: "" };
+  }
+}
+
+class MissingKubectlRunner implements CommandRunner {
+  async run(command: string, args: string[]) {
+    if (command === "git") {
+      return { exitCode: 0, stderr: "", stdout: "git version 2.0.0\n" };
+    }
+    if (command === "kubectl" && args[0] === "version") {
+      return { exitCode: 1, stderr: "missing", stdout: "" };
     }
     return { exitCode: 1, stderr: "missing", stdout: "" };
   }
@@ -150,7 +168,7 @@ class RecordingPrompt implements DeployPrompt {
       "Deployment name": "prompt-demo",
       "Deployment workspace path": "/tmp/takcli-prompt-workspace",
       "Docker image registry namespace": "docker.io/codehausau",
-      "Docker image tag": "main",
+      "Docker image tag": "latest",
       "Postgres password": "postgres-pass",
       "TAK Server certificate password": "tak-pass",
       "TAK Server git ref": "main",
@@ -163,6 +181,20 @@ class RecordingPrompt implements DeployPrompt {
 
   async select() {
     return "docker-compose";
+  }
+}
+
+class DefaultingPrompt implements DeployPrompt {
+  async confirm() {
+    return true;
+  }
+
+  async input(options: { defaultValue?: string; message: string; secret?: boolean }) {
+    return options.defaultValue ?? "value";
+  }
+
+  async select() {
+    return "kubernetes";
   }
 }
 
@@ -179,6 +211,21 @@ describe("deploy integration", () => {
     expect(exitCode).toBe(1);
     expect(io.readStdout()).toContain("Missing dependencies");
     expect(io.readStdout()).toContain("docker compose");
+    expect(io.readStderr()).toContain("Required deploy dependencies are missing.");
+  });
+
+  it("reports missing kubectl with guidance", async () => {
+    const io = createMemoryIo();
+
+    const exitCode = await runCli(
+      ["deploy", "--target", "kubernetes"],
+      io.io,
+      createServices(new MissingKubectlRunner())
+    );
+
+    expect(exitCode).toBe(1);
+    expect(io.readStdout()).toContain("Missing dependencies");
+    expect(io.readStdout()).toContain("kubectl");
     expect(io.readStderr()).toContain("Required deploy dependencies are missing.");
   });
 
@@ -242,7 +289,12 @@ describe("deploy integration", () => {
         "--json"
       ],
       io.io,
-      createServices(runner)
+      {
+        deploy: {
+          prompt: new DefaultingPrompt(),
+          runner
+        }
+      }
     );
 
     expect(exitCode).toBe(0);
@@ -266,6 +318,84 @@ describe("deploy integration", () => {
 
     const envStats = await stat(path.join(deploymentRoot, ".env"));
     expect(envStats.mode & 0o777).toBe(0o600);
+  });
+
+  it("defaults the main ref to the latest image tag", async () => {
+    const repoDir = await createFakeTakServerRepo();
+    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
+    const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-workspace-"));
+    const dataDir = path.join(deploymentRoot, "data");
+    const logsDir = path.join(dataDir, "logs");
+    const certsDir = path.join(dataDir, "certs");
+    const runner = new HybridRunner();
+    const io = createMemoryIo();
+
+    const exitCode = await runCli(
+      [
+        "deploy",
+        "--target",
+        "kubernetes",
+        "--ref",
+        "main",
+        "--repo-url",
+        repoDir,
+        "--cache-root",
+        cacheRoot,
+        "--name",
+        "default-tag",
+        "--deployment-root",
+        deploymentRoot,
+        "--data-dir",
+        dataDir,
+        "--logs-dir",
+        logsDir,
+        "--certs-dir",
+        certsDir,
+        "--registry",
+        "docker.io/codehausau",
+        "--postgres-password",
+        "postgres-pass",
+        "--ca-name",
+        "DemoCA",
+        "--ca-pass",
+        "ca-pass",
+        "--state",
+        "ACT",
+        "--city",
+        "Canberra",
+        "--organization",
+        "CodeHaus",
+        "--organizational-unit",
+        "Ops",
+        "--takserver-cert-pass",
+        "tak-pass",
+        "--admin-cert-name",
+        "admin",
+        "--admin-cert-pass",
+        "admin-pass",
+        "--yes",
+        "--dry-run",
+        "--json"
+      ],
+      io.io,
+      {
+        deploy: {
+          prompt: new DefaultingPrompt(),
+          runner
+        }
+      }
+    );
+
+    expect(exitCode).toBe(0);
+    const output = JSON.parse(io.readStdout()) as {
+      imageTag: string;
+      kubernetes: {
+        images: { server: string };
+      };
+    };
+
+    expect(output.imageTag).toBe("latest");
+    expect(output.kubernetes.images.server).toBe("docker.io/codehausau/takserver-full:latest");
   });
 
   it("marks sensitive deploy prompts as secret input", async () => {
@@ -319,6 +449,152 @@ describe("deploy integration", () => {
         expect.objectContaining({ message: "Admin certificate password", secret: true })
       ])
     );
+  });
+
+  it("prepares a Kubernetes workspace from an official repo clone", async () => {
+    const repoDir = await createFakeTakServerRepo();
+    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
+    const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-k8s-workspace-"));
+    const dataDir = path.join(deploymentRoot, "data");
+    const logsDir = path.join(dataDir, "logs");
+    const certsDir = path.join(dataDir, "certs");
+    const runner = new HybridRunner();
+    const io = createMemoryIo();
+
+    const exitCode = await runCli(
+      [
+        "deploy",
+        "--target",
+        "kubernetes",
+        "--ref",
+        "main",
+        "--repo-url",
+        repoDir,
+        "--cache-root",
+        cacheRoot,
+        "--name",
+        "demo-k8s",
+        "--deployment-root",
+        deploymentRoot,
+        "--data-dir",
+        dataDir,
+        "--logs-dir",
+        logsDir,
+        "--certs-dir",
+        certsDir,
+        "--registry",
+        "docker.io/codehausau",
+        "--image-tag",
+        "main",
+        "--postgres-password",
+        "postgres-pass",
+        "--ca-name",
+        "DemoCA",
+        "--ca-pass",
+        "ca-pass",
+        "--state",
+        "ACT",
+        "--city",
+        "Canberra",
+        "--organization",
+        "CodeHaus",
+        "--organizational-unit",
+        "Ops",
+        "--takserver-cert-pass",
+        "tak-pass",
+        "--admin-cert-name",
+        "admin",
+        "--admin-cert-pass",
+        "admin-pass",
+        "--yes",
+        "--dry-run",
+        "--json"
+      ],
+      io.io,
+      createServices(runner)
+    );
+
+    expect(exitCode).toBe(0);
+    const output = JSON.parse(io.readStdout()) as {
+      kubernetes: {
+        images: { db: string; server: string };
+        manifestPath: string;
+        namespace: string;
+      };
+      target: string;
+    };
+
+    expect(output.target).toBe("kubernetes");
+    expect(output.kubernetes.images.server).toBe("docker.io/codehausau/takserver-full:main");
+    expect(output.kubernetes.images.db).toBe("postgis/postgis:15-3.3");
+    expect(output.kubernetes.namespace).toBe("demo-k8s");
+    await access(output.kubernetes.manifestPath);
+
+    const manifest = await readFile(output.kubernetes.manifestPath, "utf8");
+    expect(manifest).toContain("docker.io/codehausau/takserver-full:main");
+    expect(manifest).toContain("kind: Namespace");
+    expect(manifest).toContain("type: LoadBalancer");
+  });
+
+  it("applies Kubernetes manifests when dry-run is disabled", async () => {
+    const repoDir = await createFakeTakServerRepo();
+    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
+    const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-k8s-apply-"));
+    const runner = new HybridRunner();
+
+    const exitCode = await runCli(
+      [
+        "deploy",
+        "--target",
+        "kubernetes",
+        "--ref",
+        "main",
+        "--repo-url",
+        repoDir,
+        "--cache-root",
+        cacheRoot,
+        "--name",
+        "apply-k8s",
+        "--deployment-root",
+        deploymentRoot,
+        "--data-dir",
+        path.join(deploymentRoot, "data"),
+        "--logs-dir",
+        path.join(deploymentRoot, "data", "logs"),
+        "--certs-dir",
+        path.join(deploymentRoot, "data", "certs"),
+        "--registry",
+        "docker.io/codehausau",
+        "--image-tag",
+        "main",
+        "--postgres-password",
+        "postgres-pass",
+        "--ca-name",
+        "DemoCA",
+        "--ca-pass",
+        "ca-pass",
+        "--state",
+        "ACT",
+        "--city",
+        "Canberra",
+        "--organization",
+        "CodeHaus",
+        "--organizational-unit",
+        "Ops",
+        "--takserver-cert-pass",
+        "tak-pass",
+        "--admin-cert-name",
+        "admin",
+        "--admin-cert-pass",
+        "admin-pass",
+        "--yes"
+      ],
+      createMemoryIo().io,
+      createServices(runner)
+    );
+
+    expect(exitCode).toBe(0);
+    expect(runner.invocations.some((invocation) => invocation.startsWith("kubectl apply -f "))).toBe(true);
   });
 
   it("reuses an existing clone cache for repeat deploys", async () => {

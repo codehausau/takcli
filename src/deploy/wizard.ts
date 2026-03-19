@@ -3,15 +3,13 @@ import path from "node:path";
 
 import { writeSection, writeJson } from "../cli/output.js";
 import { CliError, type IO } from "../cli/runtime.js";
-import {
-  createComposeImages,
-  inferImageTag,
-  prepareComposeWorkspace
-} from "./compose.js";
+import { prepareComposeWorkspace } from "./compose.js";
+import { createDeployImages, inferImageTag } from "./images.js";
+import { prepareKubernetesWorkspace } from "./kubernetes.js";
 import { ensureTakServerClone, getDefaultDeploymentRoot } from "./repo.js";
 import { checkDeployDependencies } from "./system.js";
 import type {
-  ComposeEnvironmentValues,
+  DeployEnvironmentValues,
   DeployRequest,
   DeployResult,
   DeployServices,
@@ -60,7 +58,7 @@ async function resolveTarget(
         value: "docker-compose"
       },
       {
-        description: "Planned next. Helm support will reuse the same TAK Server clone cache.",
+        description: "Experimental support. Renders TAKCLI-managed manifests and can apply them with kubectl.",
         value: "kubernetes"
       }
     ],
@@ -69,11 +67,11 @@ async function resolveTarget(
   })) as DeployTarget;
 }
 
-async function collectComposeEnvironmentValues(
+async function collectDeploymentEnvironmentValues(
   options: DeployWizardOptions,
   prompt: DeployServices["prompt"],
   request: Pick<DeployRequest, "deploymentName">
-): Promise<ComposeEnvironmentValues> {
+): Promise<DeployEnvironmentValues> {
   const normalizedName = request.deploymentName.replace(/[^A-Za-z0-9_-]+/g, "-");
   return {
     adminCertName: options.adminCertName ?? (await prompt.input({
@@ -120,7 +118,13 @@ async function collectComposeEnvironmentValues(
 }
 
 function buildPlanLines(request: DeployRequest, gitCommit: string): string[] {
-  const images = createComposeImages(request.registry, request.imageTag);
+  const images = createDeployImages(request.registry, request.imageTag);
+  const executionLine = request.dryRun
+    ? "Execution: dry-run (workspace generation only)"
+    : request.target === "docker-compose"
+      ? "Execution: docker compose up -d"
+      : "Execution: kubectl apply -f kubernetes.yaml (experimental)";
+
   return [
     `Target: ${request.target}`,
     `TAK Server repo: ${request.repoUrl}`,
@@ -133,14 +137,8 @@ function buildPlanLines(request: DeployRequest, gitCommit: string): string[] {
     `Certs dir: ${request.certsDir}`,
     `Server image: ${images.server}`,
     `Database image: ${images.db}`,
-    request.dryRun ? "Execution: dry-run (workspace generation only)" : "Execution: docker compose up -d"
+    executionLine
   ];
-}
-
-function ensureSupportedTarget(target: DeployTarget): void {
-  if (target === "kubernetes") {
-    throw new CliError("Kubernetes deploy support is planned next. Use `docker-compose` for the current deploy wizard.");
-  }
 }
 
 export async function runDeployWizard(
@@ -149,7 +147,6 @@ export async function runDeployWizard(
   options: DeployWizardOptions
 ): Promise<DeployResult> {
   const target = await resolveTarget(options, services.prompt);
-  ensureSupportedTarget(target);
 
   const dependencyCheck = await checkDeployDependencies(services.runner, target);
   if (dependencyCheck.missing.length > 0) {
@@ -218,7 +215,7 @@ export async function runDeployWizard(
     yes: Boolean(options.yes)
   };
 
-  const envValues = await collectComposeEnvironmentValues(options, services.prompt, request);
+  const envValues = await collectDeploymentEnvironmentValues(options, services.prompt, request);
 
   const clone = await ensureTakServerClone({
     cacheRoot: request.cacheRoot,
@@ -241,39 +238,9 @@ export async function runDeployWizard(
     }
   }
 
-  const compose = await prepareComposeWorkspace({
-    clonePath: clone.clonePath,
-    envValues,
-    gitCommit: clone.gitCommit,
-    request
-  });
-
-  const steps = [
-    `Cloned or reused ${request.repoUrl} at ${clone.clonePath}`,
-    `Prepared deployment workspace at ${request.deploymentRoot}`,
-    `Rendered ${compose.composeFilePath}`,
-    `Rendered ${compose.envFilePath}`
-  ];
-
-  if (!request.dryRun) {
-    const upResult = await services.runner.run(
-      "docker",
-      ["compose", "-f", compose.composeFilePath, "up", "-d"],
-      {
-        cwd: request.deploymentRoot
-      }
-    );
-    if (upResult.exitCode !== 0) {
-      throw new CliError(`docker compose up failed: ${upResult.stderr || upResult.stdout}`);
-    }
-    steps.push(`Started docker compose deployment from ${compose.composeFilePath}`);
-  } else {
-    steps.push("Skipped docker compose up because --dry-run was requested");
-  }
-
+  const steps = [`Cloned or reused ${request.repoUrl} at ${clone.clonePath}`];
   const result: DeployResult = {
     clonePath: clone.clonePath,
-    compose,
     deploymentName: request.deploymentName,
     dryRun: request.dryRun,
     gitCommit: clone.gitCommit,
@@ -283,18 +250,89 @@ export async function runDeployWizard(
     target: request.target
   };
 
+  if (request.target === "docker-compose") {
+    const compose = await prepareComposeWorkspace({
+      clonePath: clone.clonePath,
+      envValues,
+      gitCommit: clone.gitCommit,
+      request
+    });
+
+    result.compose = compose;
+    steps.push(
+      `Prepared deployment workspace at ${request.deploymentRoot}`,
+      `Rendered ${compose.composeFilePath}`,
+      `Rendered ${compose.envFilePath}`
+    );
+
+    if (!request.dryRun) {
+      const upResult = await services.runner.run(
+        "docker",
+        ["compose", "-f", compose.composeFilePath, "up", "-d"],
+        {
+          cwd: request.deploymentRoot
+        }
+      );
+      if (upResult.exitCode !== 0) {
+        throw new CliError(`docker compose up failed: ${upResult.stderr || upResult.stdout}`);
+      }
+      steps.push(`Started docker compose deployment from ${compose.composeFilePath}`);
+    } else {
+      steps.push("Skipped docker compose up because --dry-run was requested");
+    }
+  } else {
+    const kubernetes = await prepareKubernetesWorkspace({
+      clonePath: clone.clonePath,
+      envValues,
+      gitCommit: clone.gitCommit,
+      request
+    });
+
+    result.kubernetes = kubernetes;
+    steps.push(
+      `Prepared deployment workspace at ${request.deploymentRoot}`,
+      `Rendered ${kubernetes.manifestPath}`
+    );
+
+    if (!request.dryRun) {
+      const applyResult = await services.runner.run(
+        "kubectl",
+        ["apply", "-f", kubernetes.manifestPath],
+        {
+          cwd: request.deploymentRoot
+        }
+      );
+      if (applyResult.exitCode !== 0) {
+        throw new CliError(`kubectl apply failed: ${applyResult.stderr || applyResult.stdout}`);
+      }
+      steps.push(`Applied Kubernetes manifests from ${kubernetes.manifestPath}`);
+    } else {
+      steps.push("Skipped kubectl apply because --dry-run was requested");
+    }
+  }
+
   if (options.json) {
     writeJson(io, {
       command: "deploy",
       ...result
     });
-  } else {
+  } else if (result.compose) {
     writeSection(io, "Deployment complete", [
       `Deployment: ${result.deploymentName}`,
-      `Workspace: ${compose.workspacePath}`,
-      `Compose file: ${compose.composeFilePath}`,
-      `Images: ${compose.images.server} and ${compose.images.db}`,
+      `Workspace: ${result.compose.workspacePath}`,
+      `Compose file: ${result.compose.composeFilePath}`,
+      `Images: ${result.compose.images.server} and ${result.compose.images.db}`,
       request.dryRun ? "Docker Compose was not started." : "Docker Compose stack started."
+    ]);
+  } else if (result.kubernetes) {
+    writeSection(io, "Deployment complete", [
+      `Deployment: ${result.deploymentName}`,
+      `Workspace: ${result.kubernetes.workspacePath}`,
+      `Manifest: ${result.kubernetes.manifestPath}`,
+      `Namespace: ${result.kubernetes.namespace}`,
+      `Images: ${result.kubernetes.images.server} and ${result.kubernetes.images.db}`,
+      "Kubernetes support is experimental.",
+      request.dryRun ? "Kubernetes manifests were not applied." : "Kubernetes manifests applied."
     ]);
   }
 

@@ -53,6 +53,19 @@ export interface ComposeImageSet {
   server: string;
 }
 
+export interface DeployEnvironmentValues {
+  adminCertName: string;
+  adminCertPass: string;
+  caName: string;
+  caPass: string;
+  city: string;
+  organization: string;
+  organizationalUnit: string;
+  postgresPassword: string;
+  state: string;
+  takserverCertPass: string;
+}
+
 export interface DeployWizardOptions {
   adminCertName?: string;
   adminCertPass?: string;
@@ -98,19 +111,6 @@ export interface DeployRequest {
   yes: boolean;
 }
 
-export interface ComposeEnvironmentValues {
-  adminCertName: string;
-  adminCertPass: string;
-  caName: string;
-  caPass: string;
-  city: string;
-  organization: string;
-  organizationalUnit: string;
-  postgresPassword: string;
-  state: string;
-  takserverCertPass: string;
-}
-
 export interface ComposeWorkspace {
   composeFilePath: string;
   dbDataDir: string;
@@ -121,6 +121,14 @@ export interface ComposeWorkspace {
   workspacePath: string;
 }
 
+export interface KubernetesWorkspace {
+  deploymentMetadataPath: string;
+  images: ComposeImageSet;
+  manifestPath: string;
+  namespace: string;
+  workspacePath: string;
+}
+
 export interface DeployResult {
   clonePath: string;
   compose?: ComposeWorkspace;
@@ -128,6 +136,7 @@ export interface DeployResult {
   dryRun: boolean;
   gitCommit: string;
   imageTag: string;
+  kubernetes?: KubernetesWorkspace;
   registry: string;
   steps: string[];
   target: DeployTarget;

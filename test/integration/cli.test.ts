@@ -1,7 +1,7 @@
 import https from "node:https";
 import os from "node:os";
 import path from "node:path";
-import { mkdtemp } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, writeFile } from "node:fs/promises";
 
 import selfsigned from "selfsigned";
 import { afterEach, describe, expect, it } from "vitest";
@@ -228,6 +228,64 @@ describe("TAKCLI integration", () => {
     const doctorOutput = JSON.parse(doctor.readStdout()) as { ok: boolean; summary: { failed: number } };
     expect(doctorOutput.ok).toBe(true);
     expect(doctorOutput.summary.failed).toBe(0);
+  });
+
+  it("runs kubernetes doctor checks through kubectl", async () => {
+    const baseDir = await mkdtemp(path.join(os.tmpdir(), "takcli-kubectl-"));
+    await mkdir(path.join(baseDir, "bin"), { recursive: true });
+    const kubectlPath = path.join(baseDir, "bin", "kubectl");
+    await writeFile(
+      kubectlPath,
+      [
+        "#!/bin/sh",
+        "if [ \"$1\" = \"version\" ] && [ \"$2\" = \"--client=true\" ]; then",
+        "  printf '%s' '{\"clientVersion\":{\"gitVersion\":\"v1.30.0\"}}'",
+        "  exit 0",
+        "fi",
+        "if [ \"$1\" = \"config\" ] && [ \"$2\" = \"current-context\" ]; then",
+        "  printf '%s\\n' 'k3s-test'",
+        "  exit 0",
+        "fi",
+        "if [ \"$1\" = \"get\" ] && [ \"$2\" = \"nodes\" ]; then",
+        "  printf '%s' '{\"items\":[{\"metadata\":{\"name\":\"node-1\"},\"status\":{\"conditions\":[{\"type\":\"Ready\",\"status\":\"True\"}]}}]}'",
+        "  exit 0",
+        "fi",
+        "if [ \"$1\" = \"get\" ] && [ \"$2\" = \"storageclass\" ]; then",
+        "  printf '%s' '{\"items\":[{\"metadata\":{\"name\":\"local-path\",\"annotations\":{\"storageclass.kubernetes.io/is-default-class\":\"true\"}}}]}'",
+        "  exit 0",
+        "fi",
+        "if [ \"$1\" = \"get\" ] && [ \"$2\" = \"namespace\" ]; then",
+        "  printf '%s' '{}'",
+        "  exit 0",
+        "fi",
+        "printf '%s\\n' \"unexpected kubectl invocation: $*\" >&2",
+        "exit 1"
+      ].join("\n"),
+      "utf8"
+    );
+    await chmod(kubectlPath, 0o755);
+
+    const originalPath = process.env.PATH;
+    process.env.PATH = `${path.join(baseDir, "bin")}:${originalPath ?? ""}`;
+
+    try {
+      const io = createMemoryIo();
+      const exitCode = await runCli(["doctor", "--kubernetes", "--namespace", "tak-demo", "--json"], io.io);
+
+      expect(exitCode).toBe(0);
+      const report = JSON.parse(io.readStdout()) as {
+        kubernetes: { context?: string; defaultStorageClass?: string; readyNodes?: number };
+        mode: string;
+        ok: boolean;
+      };
+      expect(report.mode).toBe("kubernetes");
+      expect(report.ok).toBe(true);
+      expect(report.kubernetes.context).toBe("k3s-test");
+      expect(report.kubernetes.defaultStorageClass).toBe("local-path");
+      expect(report.kubernetes.readyNodes).toBe(1);
+    } finally {
+      process.env.PATH = originalPath;
+    }
   });
 
   it("returns a non-zero exit code when status is degraded", async () => {
