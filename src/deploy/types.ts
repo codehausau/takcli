@@ -66,6 +66,11 @@ export interface DeployEnvironmentValues {
   takserverCertPass: string;
 }
 
+export interface DeployBootstrapWebTakUser {
+  password: string;
+  username: string;
+}
+
 export interface DeployWizardOptions {
   adminCertName?: string;
   adminCertPass?: string;
@@ -91,6 +96,8 @@ export interface DeployWizardOptions {
   state?: string;
   takserverCertPass?: string;
   target?: DeployTarget;
+  webtakPassword?: string;
+  webtakUsername?: string;
   yes?: boolean;
 }
 
@@ -108,6 +115,7 @@ export interface DeployRequest {
   registry: string;
   repoUrl: string;
   target: DeployTarget;
+  webtakUser?: DeployBootstrapWebTakUser;
   yes: boolean;
 }
 
