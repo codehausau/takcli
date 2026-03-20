@@ -22,6 +22,16 @@ jobs:
           cache: pnpm
           node-version: 22
 
+      - name: Install Trivy
+        run: |
+          TRIVY_VERSION="0.69.3"
+          curl -fsSL \
+            -o trivy.tar.gz \
+            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          tar -xzf trivy.tar.gz trivy
+          sudo install -m 0755 trivy /usr/local/bin/trivy
+          trivy --version
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -36,6 +46,16 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      - name: Trivy filesystem scan
+        run: |
+          trivy fs \
+            --exit-code 1 \
+            --ignore-unfixed \
+            --pkg-types library \
+            --scanners vuln \
+            --severity HIGH,CRITICAL \
+            .
 
       - name: Pack npm tarball
         run: pnpm pack
@@ -58,3 +78,13 @@ jobs:
         run: |
           docker build -t takcli-smoke .
           docker run --rm takcli-smoke version
+
+      - name: Trivy image scan
+        run: |
+          trivy image \
+            --exit-code 1 \
+            --format table \
+            --ignore-unfixed \
+            --pkg-types os,library \
+            --severity HIGH,CRITICAL \
+            takcli-smoke
