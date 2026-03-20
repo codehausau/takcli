@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.0](https://github.com/codehausau/takcli/compare/takcli-v0.5.1...takcli-v0.6.0) (2026-03-20)
+
+
+### Features
+
+* track deployed environments ([4640768](https://github.com/codehausau/takcli/commit/46407686ff91df84a397c180920e289c5c97442a))
+* track deployed environments ([d983ec1](https://github.com/codehausau/takcli/commit/d983ec161571a16cfc59e93c641896473fd63487))
+
 ## [0.5.1](https://github.com/codehausau/takcli/compare/takcli-v0.5.0...takcli-v0.5.1) (2026-03-19)
 
 
