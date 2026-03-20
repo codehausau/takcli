@@ -2,6 +2,8 @@
 
 `takcli` is a modern operator CLI for Team Awareness Kit workflows.
 
+![takcli live demo](docs/assets/takcli-readme-live.gif)
+
 The first milestone focuses on:
 - profile and active-context management
 - TAK server diagnostics with `doctor`
@@ -264,6 +266,18 @@ takcli users groups remove alice --out-group Green
 takcli users groups members Blue
 takcli users delete alice
 ```
+
+## CLI demos
+
+This repo includes reproducible terminal demo tapes for README assets using `vhs`.
+
+Render the sample demos with:
+
+```bash
+pnpm demo:readme:live
+```
+
+`pnpm demo:readme:live` starts a dedicated renderer container on the same Docker network as a running local TAK compose deployment and exercises real `status`, `doctor`, `users`, `cot`, and compose `deploy` commands. Demo sources live in [`docs/demos/`](./docs/demos/README.md) and generated assets are written to `docs/assets/`.
 
 ## Development
 
