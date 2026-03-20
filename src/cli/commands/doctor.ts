@@ -6,7 +6,8 @@ import { loadConfig } from "../../core/config-store.js";
 import { resolveProfileTarget } from "../../core/profile-resolution.js";
 import { runDoctor } from "../../tak/doctor.js";
 import { runKubernetesDoctor } from "../../tak/kubernetes-doctor.js";
-import { renderTable, writeJson, writeSection } from "../output.js";
+import type { DoctorCheck, DoctorReport } from "../../tak/types.js";
+import { formatStatusToken, renderTable, writeCommandTitle, writeJson, writeSection } from "../output.js";
 import { CliError, getGlobalOptions, type IO } from "../runtime.js";
 
 function parseTimeout(value: string): number {
@@ -23,6 +24,62 @@ function parsePort(value: string): number {
     throw new CliError(`Invalid port: ${value}`);
   }
   return parsed;
+}
+
+function summarizeDoctorOverall(report: DoctorReport): string {
+  return report.ok
+    ? formatStatusToken({ kind: "success", text: "HEALTHY" })
+    : formatStatusToken({ kind: "error", text: "FAILED" });
+}
+
+function groupLabelForCheck(check: DoctorCheck): string {
+  if (check.id === "config" || check.id === "target" || check.id === "dns") {
+    return "Context";
+  }
+
+  if (check.id.endsWith("-api")) {
+    return "API";
+  }
+
+  if (check.id.endsWith("-enrollment")) {
+    return "Enrollment";
+  }
+
+  if (check.id.endsWith("-federation")) {
+    return "Federation";
+  }
+
+  if (check.id.endsWith("-cot")) {
+    return "CoT";
+  }
+
+  return "Checks";
+}
+
+function renderGroupedChecks(report: DoctorReport): Array<{ lines: string[]; title: string }> {
+  const order = ["Context", "API", "Enrollment", "Federation", "CoT", "Checks"];
+  const grouped = new Map<string, DoctorCheck[]>();
+
+  for (const check of report.checks) {
+    const group = groupLabelForCheck(check);
+    const entries = grouped.get(group) ?? [];
+    entries.push(check);
+    grouped.set(group, entries);
+  }
+
+  return order
+    .filter((title) => grouped.has(title))
+    .map((title) => ({
+      lines: renderTable(
+        ["STATUS", "CHECK", "DETAIL"],
+        (grouped.get(title) ?? []).map((check) => [
+          formatStatusToken({ kind: check.ok ? "success" : "error", text: check.ok ? "PASS" : "FAIL" }),
+          check.label,
+          check.message
+        ])
+      ),
+      title
+    }));
 }
 
 export function createDoctorCommand(io: IO): Command {
@@ -93,6 +150,14 @@ export function createDoctorCommand(io: IO): Command {
         return;
       }
 
+      writeCommandTitle(
+        io,
+        "TAK doctor",
+        report.mode === "kubernetes"
+          ? "Experimental Kubernetes preflight diagnostics"
+          : "Connectivity and configuration diagnostics"
+      );
+
       writeSection(
         io,
         "Target",
@@ -113,19 +178,14 @@ export function createDoctorCommand(io: IO): Command {
             ]
       );
 
-      writeSection(
-        io,
-        "Checks",
-        renderTable(
-          ["STATUS", "CHECK", "MESSAGE"],
-          report.checks.map((check) => [check.ok ? "PASS" : "FAIL", check.label, check.message])
-        )
-      );
+      for (const group of renderGroupedChecks(report)) {
+        writeSection(io, group.title, group.lines);
+      }
 
       writeSection(io, "Summary", [
         `Passed: ${report.summary.passed}`,
         `Failed: ${report.summary.failed}`,
-        `Overall: ${report.ok ? "healthy" : "failed"}`
+        `Overall: ${summarizeDoctorOverall(report)}`
       ]);
 
       if (!report.ok) {
