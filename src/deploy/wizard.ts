@@ -2,7 +2,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 
-import { withSpinner, writeSection, writeJson } from "../cli/output.js";
+import { withSpinner, writeCommandTitle, writeSection, writeJson } from "../cli/output.js";
 import { CliError, type IO } from "../cli/runtime.js";
 import { loadConfig, saveConfig } from "../core/config-store.js";
 import { configSchema, profileSchema } from "../core/schema.js";
@@ -520,6 +520,10 @@ export async function runDeployWizard(
   services: DeployServices,
   options: DeployWizardOptions
 ): Promise<DeployResult> {
+  if (!options.json) {
+    writeCommandTitle(io, "TAKCLI deploy", "Interactive TAK Server deployment wizard");
+  }
+
   const target = await resolveTarget(options, services.prompt);
   if (target !== "docker-compose" && (options.webtakUsername || options.webtakPassword)) {
     throw new CliError("Initial WebTAK user bootstrap is currently only supported for docker-compose deployments.");
