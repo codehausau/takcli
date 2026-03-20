@@ -23,6 +23,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "clean": "rimraf coverage dist *.tgz",
+    "demo:readme:live": "bash scripts/render-live-demo.sh docs/demos/readme-live.tape",
     "lint": "eslint .",
     "prepack": "pnpm build",
     "test": "vitest run",
