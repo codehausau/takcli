@@ -37,6 +37,17 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          exit-code: "1"
+          ignore-unfixed: true
+          scan-ref: .
+          scan-type: fs
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          vuln-type: library
+
       - name: Pack npm tarball
         run: pnpm pack
 
@@ -58,3 +69,13 @@ jobs:
         run: |
           docker build -t takcli-smoke .
           docker run --rm takcli-smoke version
+
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          exit-code: "1"
+          format: table
+          ignore-unfixed: true
+          image-ref: takcli-smoke
+          severity: HIGH,CRITICAL
+          vuln-type: os,library
