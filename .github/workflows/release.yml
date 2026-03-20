@@ -53,11 +53,20 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
 
-      - id: version
-        name: Resolve release version
-        run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - name: Log in to Docker Hub
+        if: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
+        uses: docker/login-action@v3
+        with:
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
 
-      - uses: docker/build-push-action@v6
+      - id: version
+        name: Resolve package version
+        run: |
+          echo "value=$(node -e "const fs = require('node:fs'); const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8')); process.stdout.write(pkg.version);")" >> "$GITHUB_OUTPUT"
+
+      - name: Publish container to GHCR
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
@@ -66,3 +75,15 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/takcli:${{ steps.version.outputs.value }}
             ghcr.io/${{ github.repository_owner }}/takcli:latest
+
+      - name: Publish container to Docker Hub
+        if: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            docker.io/codehausau/takcli:${{ steps.version.outputs.value }}
+            docker.io/codehausau/takcli:latest

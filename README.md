@@ -24,6 +24,12 @@ curl -fsSL https://raw.githubusercontent.com/codehausau/takcli/main/scripts/inst
 
 ### Docker
 ```bash
+docker run --rm docker.io/codehausau/takcli:latest version
+```
+
+GitHub Container Registry is also published:
+
+```bash
 docker run --rm ghcr.io/codehausau/takcli:latest version
 ```
 
@@ -162,7 +168,7 @@ takcli deploy \
   --ref main \
   --name tak-demo \
   --registry docker.io/codehausau \
-  --image-tag main
+  --image-tag latest
 ```
 
 For non-interactive use, you can provide the required deployment values up front:
@@ -177,7 +183,7 @@ takcli deploy \
   --logs-dir ~/.takcli/deployments/tak-demo/data/logs \
   --certs-dir ~/.takcli/deployments/tak-demo/data/certs \
   --registry docker.io/codehausau \
-  --image-tag main \
+  --image-tag latest \
   --postgres-password change-me \
   --ca-name tak-demo-CA \
   --ca-pass change-me \
@@ -274,7 +280,7 @@ This repository is designed for:
 - Conventional Commits
 - Release Please managed versioning and changelogs
 - npm publishing as `@codehaus-au/takcli`
-- Docker publishing to GitHub Container Registry
+- container publishing to GitHub Container Registry and Docker Hub
 
 ## GitHub setup
 
@@ -282,6 +288,10 @@ To get CI/CD and publishing working on `https://github.com/codehausau/takcli`, c
 
 - `NPM_TOKEN`
   - npm automation token with permission to publish `@codehaus-au/takcli`
+- `DOCKERHUB_USERNAME`
+  - Docker Hub username for publishing `docker.io/codehausau/takcli`
+- `DOCKERHUB_TOKEN`
+  - Docker Hub access token for publishing `docker.io/codehausau/takcli`
 - `RELEASE_PLEASE_TOKEN`
   - recommended when the repository or organization does not allow the default `GITHUB_TOKEN` to create pull requests
   - if using a fine-grained PAT, grant repository access with:
@@ -293,10 +303,12 @@ Workflow behavior:
 
 - pull requests run CI and semantic PR checks
 - pushes to `main` run Release Please
-- published GitHub releases run npm and GHCR publishing
+- published GitHub releases run npm publishing, GHCR publishing, and Docker Hub publishing when Docker Hub credentials are configured
 
 Notes:
 
 - `release-please.yml` prefers `RELEASE_PLEASE_TOKEN` and falls back to the built-in `GITHUB_TOKEN`
 - if your organization has disabled “GitHub Actions can create and approve pull requests”, Release Please will need `RELEASE_PLEASE_TOKEN`
+- GHCR publishing works with the built-in `GITHUB_TOKEN`
+- Docker Hub publishing is enabled when `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` are configured
 - GitHub currently warns that `googleapis/release-please-action@v4` still runs on the older Node 20 action runtime; this is an upstream action warning rather than a TAKCLI code issue

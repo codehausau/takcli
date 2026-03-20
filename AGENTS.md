@@ -164,10 +164,13 @@ Publishing targets:
 
 - npm package: `@codehaus-au/takcli`
 - container image: `ghcr.io/codehausau/takcli`
+- container image: `docker.io/codehausau/takcli` when Docker Hub credentials are configured
 
 Required GitHub Actions secrets:
 
 - `NPM_TOKEN`
+- `DOCKERHUB_USERNAME`
+- `DOCKERHUB_TOKEN`
 - `RELEASE_PLEASE_TOKEN`
 
 ## Development guidance
