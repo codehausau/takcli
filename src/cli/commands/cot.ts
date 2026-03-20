@@ -4,7 +4,7 @@ import { loadConfig } from "../../core/config-store.js";
 import { resolveProfileTarget } from "../../core/profile-resolution.js";
 import { collectCotTargets, followCot, getDefaultCotTargetDateRange, injectCot, queryCot } from "../../tak/cot/service.js";
 import { formatCotSummaryLine } from "../../tak/cot/xml.js";
-import { renderTable, writeJson, writeSection } from "../output.js";
+import { renderTable, writeCommandTitle, writeJson, writeSection } from "../output.js";
 import { CliError, getGlobalOptions, type IO } from "../runtime.js";
 
 function parseInteger(value: string, label: string, minimum = 1): number {
@@ -122,6 +122,8 @@ export function createCotCommand(io: IO): Command {
             return;
           }
 
+          writeCommandTitle(io, "TAKCLI CoT query");
+
           writeSection(io, "Target", [
             `Config: ${result.configPath}`,
             `Profile: ${result.profile.name ?? "(ad-hoc)"}`,
@@ -168,6 +170,8 @@ export function createCotCommand(io: IO): Command {
             writeJson(io, result);
             return;
           }
+
+          writeCommandTitle(io, "TAKCLI CoT targets");
 
           writeSection(io, "Target", [
             `Config: ${result.configPath}`,
@@ -240,6 +244,8 @@ export function createCotCommand(io: IO): Command {
             return;
           }
 
+          writeCommandTitle(io, "TAKCLI CoT inject");
+
           writeSection(io, "Injected CoT", [
             `Profile: ${result.profile.name ?? "(ad-hoc)"}`,
             `Server: ${result.profile.server}`,
@@ -271,6 +277,10 @@ export function createCotCommand(io: IO): Command {
           process.once("SIGINT", onInterrupt);
 
           try {
+            if (!options.json && !rawOptions.raw) {
+              writeCommandTitle(io, "TAKCLI CoT follow");
+            }
+
             await followCot(context, {
               limit: rawOptions.limit as number | undefined,
               onEvent: (event) => {

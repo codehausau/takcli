@@ -47,6 +47,14 @@ export const color = {
   warning: (text: string): string => applyAnsi(text, "33")
 };
 
+const TAKCLI_BANNER = [
+  " _____  _    _  ____ _     ___ ",
+  "|_   _|/ \\  | |/ /  _| |   |_ _|",
+  "  | | / _ \\ | ' /| | | |    | | ",
+  "  | |/ ___ \\| . \\| |_| |___ | | ",
+  "  |_/_/   \\_\\_|\\_\\\\____|____|___|"
+];
+
 export function formatPrompt(text: string): string {
   return `${color.accent(color.strong(text))}`;
 }
@@ -70,9 +78,17 @@ export function formatStatusToken(options: {
 }
 
 export function writeCommandTitle(io: IO, title: string, subtitle?: string): void {
+  writeTakcliBanner(io);
   io.stdout(`${color.accent(color.strong(title))}\n`);
   if (subtitle) {
     io.stdout(`${color.muted(subtitle)}\n`);
+  }
+  io.stdout("\n");
+}
+
+export function writeTakcliBanner(io: IO): void {
+  for (const line of TAKCLI_BANNER) {
+    io.stdout(`${color.muted(line)}\n`);
   }
   io.stdout("\n");
 }

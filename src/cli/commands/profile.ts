@@ -3,7 +3,7 @@ import { Command, Option } from "commander";
 import { loadConfig, saveConfig } from "../../core/config-store.js";
 import { normalizeServerInput } from "../../core/profile-resolution.js";
 import { configSchema, profileSchema } from "../../core/schema.js";
-import { renderTable, writeJson, writeSection } from "../output.js";
+import { renderTable, writeCommandTitle, writeJson, writeSection } from "../output.js";
 import { CliError, getGlobalOptions, type IO } from "../runtime.js";
 
 function parsePort(value: string): number {
@@ -47,6 +47,8 @@ export function createProfileCommand(io: IO): Command {
           });
           return;
         }
+
+        writeCommandTitle(io, "TAKCLI profile list");
 
         if (profiles.length === 0) {
           writeSection(io, "Profiles", [`No profiles found in ${loaded.path}`]);
@@ -96,6 +98,8 @@ export function createProfileCommand(io: IO): Command {
           writeJson(io, result);
           return;
         }
+
+        writeCommandTitle(io, "TAKCLI profile show");
 
         writeSection(io, `Profile ${target}`, [
           `Server: ${profile.server}`,
@@ -164,6 +168,8 @@ export function createProfileCommand(io: IO): Command {
           return;
         }
 
+        writeCommandTitle(io, "TAKCLI profile add");
+
         writeSection(io, `Saved profile ${name}`, [
           `Config: ${loaded.path}`,
           `Server: ${profile.server}`,
@@ -202,6 +208,8 @@ export function createProfileCommand(io: IO): Command {
           return;
         }
 
+        writeCommandTitle(io, "TAKCLI profile use");
+
         writeSection(io, `Current profile`, [`Active profile set to ${name}`]);
       })
     )
@@ -239,6 +247,8 @@ export function createProfileCommand(io: IO): Command {
           writeJson(io, result);
           return;
         }
+
+        writeCommandTitle(io, "TAKCLI profile remove");
 
         writeSection(io, `Removed profile ${name}`, [
           `Config: ${loaded.path}`,
