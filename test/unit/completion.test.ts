@@ -34,6 +34,17 @@ describe("completion support", () => {
     expect(suggestions).toContain("deploy");
   });
 
+  it("suggests users at the top level", () => {
+    const program = createCli({
+      stderr: () => undefined,
+      stdout: () => undefined
+    });
+
+    const suggestions = getCompletionSuggestions(program, ["us"]);
+
+    expect(suggestions).toContain("users");
+  });
+
   it("suggests nested profile subcommands", () => {
     const program = createCli({
       stderr: () => undefined,
@@ -54,6 +65,17 @@ describe("completion support", () => {
     const suggestions = getCompletionSuggestions(program, ["cot", "q"]);
 
     expect(suggestions).toContain("query");
+  });
+
+  it("suggests nested users subcommands", () => {
+    const program = createCli({
+      stderr: () => undefined,
+      stdout: () => undefined
+    });
+
+    const suggestions = getCompletionSuggestions(program, ["users", "g"]);
+
+    expect(suggestions).toContain("groups");
   });
 
   it("suggests command options", () => {

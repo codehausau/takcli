@@ -10,6 +10,7 @@ import { createDeployCommand } from "./commands/deploy.js";
 import { createDoctorCommand } from "./commands/doctor.js";
 import { createProfileCommand } from "./commands/profile.js";
 import { createStatusCommand } from "./commands/status.js";
+import { createUsersCommand } from "./commands/users.js";
 import { CliError, createProcessIo, writeError, writeLine, type IO } from "./runtime.js";
 
 export interface CliServices {
@@ -37,6 +38,7 @@ export function createCli(io: IO = createProcessIo(), services: CliServices = cr
   program.addCommand(createDoctorCommand(io));
   program.addCommand(createStatusCommand(io));
   program.addCommand(createProfileCommand(io));
+  program.addCommand(createUsersCommand(io));
   program.addCommand(createHiddenCompletionCommand(program, io));
   program
     .command("version")

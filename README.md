@@ -42,6 +42,7 @@ takcli doctor
 takcli status
 takcli cot query --uid my-uid
 takcli cot targets
+takcli users list
 takcli deploy
 takcli doctor --json
 takcli status --server https://127.0.0.1:8446 --insecure --json
@@ -100,6 +101,16 @@ profiles:
 - `takcli profile use`
 - `takcli profile show`
 - `takcli profile remove`
+- `takcli users list`
+- `takcli users create`
+- `takcli users reset-password`
+- `takcli users delete`
+- `takcli users groups show`
+- `takcli users groups add`
+- `takcli users groups remove`
+- `takcli users groups set`
+- `takcli users groups list`
+- `takcli users groups members`
 - `takcli version`
 
 ### Roadmap
@@ -107,8 +118,8 @@ These command families are intentionally not shipped in v1 yet:
 - `admin`
 - Kubernetes deployment in `takcli deploy`
 
-### Next candidates from the TAK Server Configuration Guide
-The local guide at [`TAK_Server_Configuration_Guide.pdf`](/workspaces/tak/tak-server/src/docs/TAK_Server_Configuration_Guide.pdf) points to several strong next-step CLI surfaces for `takcli`:
+### Next candidates
+Several strong next-step CLI surfaces for `takcli` are:
 
 - `takcli cert`
   - create and rotate TAK CA, server, admin, client, and database TLS material
@@ -223,6 +234,35 @@ Follow the live CoT stream:
 ```bash
 takcli cot follow
 takcli cot follow --limit 10 --json
+```
+
+## User workflows
+
+The TAK file-user-management endpoints are usually exposed on the secure web/admin port. On the local compose deployment in this workspace, that is `8443`, so either set your profile server to `https://127.0.0.1:8443` or override `--api-port 8443` for `users` commands.
+
+Example profile for an admin client certificate:
+
+```bash
+takcli profile add local-admin \
+  --server https://127.0.0.1:8443 \
+  --api-port 8443 \
+  --cert-file /path/to/admin.pem \
+  --key-file /path/to/admin.key \
+  --insecure \
+  --set-current
+```
+
+Example user-management flows:
+
+```bash
+takcli users list
+takcli users create alice --password 'Ch@ngeM3whenyoucan' --group Blue --out-group Green
+takcli users reset-password alice --password '@lsoCh@ngeM3WhenYouCan'
+takcli users groups show alice
+takcli users groups add alice --in-group Red
+takcli users groups remove alice --out-group Green
+takcli users groups members Blue
+takcli users delete alice
 ```
 
 ## Development

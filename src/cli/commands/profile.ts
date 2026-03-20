@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { Command, Option } from "commander";
 
 import { loadConfig, saveConfig } from "../../core/config-store.js";
@@ -104,7 +106,13 @@ export function createProfileCommand(io: IO): Command {
         writeSection(io, `Profile ${target}`, [
           `Server: ${profile.server}`,
           `Description: ${profile.description ?? "-"}`,
+          `TLS CA file: ${profile.tls.caFile ?? "-"}`,
+          `TLS client cert: ${profile.tls.certFile ?? "-"}`,
+          `TLS client key: ${profile.tls.keyFile ?? "-"}`,
           `TLS insecure skip verify: ${profile.tls.insecureSkipVerify ? "true" : "false"}`,
+          `Auth username: ${profile.auth.username ?? "-"}`,
+          `Auth password: ${profile.auth.password ? "(set)" : "-"}`,
+          `Auth token: ${profile.auth.token ? "(set)" : "-"}`,
           `Ports: api=${profile.ports.api ?? "-"}, enrollment=${profile.ports.enrollment ?? "-"}, federation=${profile.ports.federation ?? "-"}, cot=${profile.ports.cot ?? "-"}`
         ]);
       })
@@ -122,6 +130,12 @@ export function createProfileCommand(io: IO): Command {
       .option("--enrollment-port <port>", "Override enrollment port", parsePort)
       .option("--federation-port <port>", "Override federation port", parsePort)
       .option("--cot-port <port>", "Override CoT port", parsePort)
+      .option("--ca-file <path>", "Path to the trusted CA bundle")
+      .option("--cert-file <path>", "Path to the client certificate (PEM)")
+      .option("--key-file <path>", "Path to the client private key (PEM)")
+      .option("--auth-user <username>", "Store an admin username for HTTP basic auth")
+      .option("--auth-password <password>", "Store an admin password for HTTP basic auth")
+      .option("--auth-token <token>", "Store an admin bearer token")
       .option("--insecure", "Skip TLS verification")
       .option("--set-current", "Set this profile as the active profile")
       .action(async function (name: string) {
@@ -130,7 +144,24 @@ export function createProfileCommand(io: IO): Command {
         const loaded = await loadConfig(options.config, { allowMissing: true });
         const raw = cmd.opts();
 
+        const hasCert = Boolean(raw.certFile);
+        const hasKey = Boolean(raw.keyFile);
+        if (hasCert !== hasKey) {
+          throw new CliError("Both `--cert-file` and `--key-file` must be provided together.");
+        }
+
+        const hasAuthUser = Boolean(raw.authUser);
+        const hasAuthPassword = Boolean(raw.authPassword);
+        if (hasAuthUser !== hasAuthPassword) {
+          throw new CliError("Both `--auth-user` and `--auth-password` must be provided together.");
+        }
+
         const profile = profileSchema.parse({
+          auth: {
+            password: raw.authPassword,
+            token: raw.authToken,
+            username: raw.authUser
+          },
           description: raw.description,
           ports: {
             api: raw.apiPort,
@@ -140,7 +171,10 @@ export function createProfileCommand(io: IO): Command {
           },
           server: normalizeServerInput(raw.server),
           tls: {
-            insecureSkipVerify: Boolean(raw.insecure)
+            caFile: raw.caFile ? path.resolve(raw.caFile as string) : undefined,
+            certFile: raw.certFile ? path.resolve(raw.certFile as string) : undefined,
+            insecureSkipVerify: Boolean(raw.insecure),
+            keyFile: raw.keyFile ? path.resolve(raw.keyFile as string) : undefined
           }
         });
 

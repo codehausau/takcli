@@ -10,6 +10,11 @@ export const DEFAULT_PORTS = {
 } as const;
 
 export interface ResolvedProfile {
+  auth: {
+    password?: string;
+    token?: string;
+    username?: string;
+  };
   description?: string;
   host: string;
   name?: string;
@@ -43,6 +48,9 @@ export function resolveProfileTarget(
   config: TakCliConfig,
   options: {
     apiPortOverride?: number;
+    authPasswordOverride?: string;
+    authTokenOverride?: string;
+    authUsernameOverride?: string;
     cotPortOverride?: number;
     enrollmentPortOverride?: number;
     federationPortOverride?: number;
@@ -64,6 +72,11 @@ export function resolveProfileTarget(
   const url = new URL(normalizedServer);
 
   return {
+    auth: {
+      password: options.authPasswordOverride ?? selectedProfile?.auth.password,
+      token: options.authTokenOverride ?? selectedProfile?.auth.token,
+      username: options.authUsernameOverride ?? selectedProfile?.auth.username
+    },
     description: selectedProfile?.description,
     host: url.hostname,
     name: selectedName,
