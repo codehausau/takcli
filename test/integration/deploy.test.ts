@@ -9,6 +9,9 @@ import { describe, expect, it } from "vitest";
 
 import { runCli } from "../../src/index.js";
 import type { CliServices } from "../../src/cli/create-cli.js";
+import { CliError } from "../../src/cli/runtime.js";
+import { loadConfig } from "../../src/core/config-store.js";
+import { loadDeploymentState } from "../../src/deploy/state.js";
 import type { CommandRunner, DeployPrompt } from "../../src/deploy/types.js";
 
 const execFileAsync = promisify(execFile);
@@ -244,7 +247,11 @@ class RetryingPrompt implements DeployPrompt {
     this.inputCalls.push({ message: options.message, secret: options.secret });
     const values = this.values[options.message];
     if (values && values.length > 0) {
-      return values.shift() as string;
+      const value = values.shift() as string;
+      if (!value && options.defaultValue === undefined) {
+        throw new CliError(`A value is required for "${options.message}".`);
+      }
+      return value;
     }
 
     return options.defaultValue ?? "value";
@@ -799,6 +806,53 @@ describe("deploy integration", () => {
     expect(prompt.inputCalls.filter((call) => call.message === "Certificate authority password")).toHaveLength(2);
   });
 
+  it("re-prompts empty password entries instead of exiting", async () => {
+    const repoDir = await createFakeTakServerRepo();
+    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
+    const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-empty-retry-workspace-"));
+    const prompt = new RetryingPrompt({
+      values: {
+        "Certificate authority password": ["", "ca-pass"]
+      }
+    });
+    const runner = new HybridRunner();
+    const io = createMemoryIo();
+
+    const exitCode = await runCli(
+      [
+        "deploy",
+        "--target",
+        "docker-compose",
+        "--repo-url",
+        repoDir,
+        "--cache-root",
+        cacheRoot,
+        "--name",
+        "empty-retry-demo",
+        "--deployment-root",
+        deploymentRoot,
+        "--data-dir",
+        path.join(deploymentRoot, "data"),
+        "--logs-dir",
+        path.join(deploymentRoot, "data", "logs"),
+        "--certs-dir",
+        path.join(deploymentRoot, "data", "certs"),
+        "--dry-run"
+      ],
+      io.io,
+      {
+        deploy: {
+          prompt,
+          runner
+        }
+      }
+    );
+
+    expect(exitCode).toBe(0);
+    expect(io.readStderr()).toContain('A value is required for "Certificate authority password".');
+    expect(prompt.inputCalls.filter((call) => call.message === "Certificate authority password")).toHaveLength(2);
+  });
+
   it("re-prompts the initial WebTAK password after validation failures", async () => {
     const repoDir = await createFakeTakServerRepo();
     const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
@@ -1121,6 +1175,227 @@ describe("deploy integration", () => {
         invocation.includes("UserManager.jar usermod -A")
       )
     ).toBe(true);
+  });
+
+  it("can save compose deployments into TAKCLI profiles after a successful deploy", async () => {
+    const repoDir = await createFakeTakServerRepo();
+    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
+    const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-compose-profiles-"));
+    const configPath = path.join(deploymentRoot, "takcli-config.yaml");
+    const runner = new HybridRunner();
+    const prompt = new RetryingPrompt({
+      confirms: [false, true, true, true],
+      values: {
+        "Certificate authority password": ["ca-pass"]
+      }
+    });
+    const io = createMemoryIo();
+
+    const exitCode = await runCli(
+      [
+        "deploy",
+        "--config",
+        configPath,
+        "--target",
+        "docker-compose",
+        "--ref",
+        "main",
+        "--repo-url",
+        repoDir,
+        "--cache-root",
+        cacheRoot,
+        "--name",
+        "profiled-compose",
+        "--deployment-root",
+        deploymentRoot,
+        "--data-dir",
+        path.join(deploymentRoot, "data"),
+        "--logs-dir",
+        path.join(deploymentRoot, "data", "logs"),
+        "--certs-dir",
+        path.join(deploymentRoot, "data", "certs"),
+        "--registry",
+        "docker.io/codehausau",
+        "--image-tag",
+        "latest"
+      ],
+      io.io,
+      {
+        deploy: {
+          prompt,
+          runner
+        }
+      }
+    );
+
+    expect(exitCode).toBe(0);
+
+    const loaded = await loadConfig(configPath);
+    expect(loaded.config.currentProfile).toBe("profiled-compose");
+    expect(loaded.config.profiles["profiled-compose"]).toMatchObject({
+      server: "https://127.0.0.1:8446",
+      tls: {
+        insecureSkipVerify: true
+      }
+    });
+    expect(loaded.config.profiles["profiled-compose-admin"]).toMatchObject({
+      server: "https://127.0.0.1:8443",
+      tls: {
+        caFile: path.join(deploymentRoot, "data", "certs", "files", "root-ca.pem"),
+        certFile: path.join(deploymentRoot, "data", "certs", "files", "admin.pem"),
+        insecureSkipVerify: true,
+        keyFile: path.join(deploymentRoot, "data", "certs", "files", "admin.key")
+      }
+    });
+    expect(io.readStdout()).toContain("Saved TAKCLI profiles");
+  });
+
+  it("tracks successful compose deployments in the deployment state file", async () => {
+    const repoDir = await createFakeTakServerRepo();
+    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
+    const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-compose-state-"));
+    const configPath = path.join(deploymentRoot, "takcli-config.yaml");
+    const runner = new HybridRunner();
+    const io = createMemoryIo();
+
+    const exitCode = await runCli(
+      [
+        "deploy",
+        "--config",
+        configPath,
+        "--target",
+        "docker-compose",
+        "--ref",
+        "main",
+        "--repo-url",
+        repoDir,
+        "--cache-root",
+        cacheRoot,
+        "--name",
+        "tracked-compose",
+        "--deployment-root",
+        deploymentRoot,
+        "--data-dir",
+        path.join(deploymentRoot, "data"),
+        "--logs-dir",
+        path.join(deploymentRoot, "data", "logs"),
+        "--certs-dir",
+        path.join(deploymentRoot, "data", "certs"),
+        "--registry",
+        "docker.io/codehausau",
+        "--image-tag",
+        "latest",
+        "--postgres-password",
+        "postgres-pass",
+        "--ca-name",
+        "DemoCA",
+        "--ca-pass",
+        "ca-pass",
+        "--state",
+        "ACT",
+        "--city",
+        "Canberra",
+        "--organization",
+        "CodeHaus",
+        "--organizational-unit",
+        "Ops",
+        "--takserver-cert-pass",
+        "tak-pass",
+        "--admin-cert-name",
+        "admin",
+        "--admin-cert-pass",
+        "admin-pass",
+        "--yes",
+        "--json"
+      ],
+      io.io,
+      createServices(runner)
+    );
+
+    expect(exitCode).toBe(0);
+    const output = JSON.parse(io.readStdout()) as { statePath: string };
+    const loaded = await loadDeploymentState(configPath);
+    const tracked = loaded.state.deployments["tracked-compose"];
+
+    expect(output.statePath).toBe(loaded.path);
+    expect(tracked).toMatchObject({
+      certsDir: path.join(deploymentRoot, "data", "certs"),
+      compose: {
+        composeFilePath: path.join(deploymentRoot, "docker-compose.yml"),
+        envFilePath: path.join(deploymentRoot, ".env")
+      },
+      dataDir: path.join(deploymentRoot, "data"),
+      deploymentRoot,
+      imageTag: "latest",
+      logsDir: path.join(deploymentRoot, "data", "logs"),
+      profileNames: [],
+      ref: "main",
+      registry: "docker.io/codehausau",
+      repoUrl: repoDir,
+      target: "docker-compose"
+    });
+  });
+
+  it("prints a deployment wait message while compose startup is in progress", async () => {
+    const repoDir = await createFakeTakServerRepo();
+    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
+    const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-compose-progress-"));
+    const runner = new HybridRunner();
+    const io = createMemoryIo();
+
+    const exitCode = await runCli(
+      [
+        "deploy",
+        "--target",
+        "docker-compose",
+        "--ref",
+        "main",
+        "--repo-url",
+        repoDir,
+        "--cache-root",
+        cacheRoot,
+        "--name",
+        "progress-compose",
+        "--deployment-root",
+        deploymentRoot,
+        "--data-dir",
+        path.join(deploymentRoot, "data"),
+        "--logs-dir",
+        path.join(deploymentRoot, "data", "logs"),
+        "--certs-dir",
+        path.join(deploymentRoot, "data", "certs"),
+        "--registry",
+        "docker.io/codehausau",
+        "--image-tag",
+        "latest",
+        "--postgres-password",
+        "postgres-pass",
+        "--ca-name",
+        "DemoCA",
+        "--ca-pass",
+        "ca-pass",
+        "--state",
+        "ACT",
+        "--city",
+        "Canberra",
+        "--organization",
+        "CodeHaus",
+        "--organizational-unit",
+        "Ops",
+        "--takserver-cert-pass",
+        "tak-pass",
+        "--admin-cert-name",
+        "admin",
+        "--admin-cert-pass",
+        "admin-pass",
+        "--yes"
+      ],
+      io.io,
+      createServices(runner)
+    );
+
+    expect(exitCode).toBe(0);
+    expect(io.readStdout()).toContain("Starting Docker Compose deployment...");
   });
 
   it("reuses an existing clone cache for repeat deploys", async () => {

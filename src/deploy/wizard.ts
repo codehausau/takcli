@@ -2,12 +2,15 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 
-import { writeSection, writeJson } from "../cli/output.js";
+import { withSpinner, writeSection, writeJson } from "../cli/output.js";
 import { CliError, type IO } from "../cli/runtime.js";
+import { loadConfig, saveConfig } from "../core/config-store.js";
+import { configSchema, profileSchema } from "../core/schema.js";
 import { prepareComposeWorkspace } from "./compose.js";
 import { createDeployImages, inferImageTag } from "./images.js";
 import { prepareKubernetesWorkspace } from "./kubernetes.js";
 import { ensureTakServerClone, getDefaultDeploymentRoot } from "./repo.js";
+import { loadDeploymentState, saveDeploymentState, type TrackedDeployment } from "./state.js";
 import { checkDeployDependencies } from "./system.js";
 import type {
   DeployBootstrapWebTakUser,
@@ -28,6 +31,7 @@ const WEBTAK_BOOTSTRAP_USERNAME_ENV = "TAKCLI_WEBTAK_BOOTSTRAP_USERNAME";
 const WEBTAK_BOOTSTRAP_PASSWORD_ENV = "TAKCLI_WEBTAK_BOOTSTRAP_PASSWORD";
 const WEBTAK_BOOTSTRAP_ATTEMPTS = 5;
 const WEBTAK_BOOTSTRAP_RETRY_DELAY_MS = 2_000;
+const DEPLOY_PROFILE_HOST = "127.0.0.1";
 
 function defaultDeploymentName(): string {
   return `tak-${new Date().toISOString().slice(0, 10)}`;
@@ -77,11 +81,21 @@ async function resolveValidatedPromptedValue(options: {
   }
 
   while (true) {
-    const value = await options.prompt.input({
-      defaultValue: options.defaultValue,
-      message: options.message,
-      secret: options.secret
-    });
+    let value = "";
+
+    try {
+      value = await options.prompt.input({
+        defaultValue: options.defaultValue,
+        message: options.message,
+        secret: options.secret
+      });
+    } catch (error) {
+      if (error instanceof CliError) {
+        options.io.stderr(`${error.message}\n`);
+        continue;
+      }
+      throw error;
+    }
 
     try {
       options.validate(value);
@@ -176,10 +190,16 @@ async function collectDeploymentEnvironmentValues(
       defaultValue: "Operations",
       message: "Certificate organizational unit"
     })),
-    postgresPassword: options.postgresPassword ?? (await prompt.input({
+    postgresPassword: await resolveValidatedPromptedValue({
+      io,
       message: "Postgres password",
-      secret: true
-    })),
+      prompt,
+      secret: true,
+      supplied: options.postgresPassword,
+      validate: () => {
+        // No additional password policy beyond requiring a value.
+      }
+    }),
     state: options.state ?? (await prompt.input({
       defaultValue: "Unknown",
       message: "Certificate state/province"
@@ -359,6 +379,117 @@ async function bootstrapComposeWebTakUser(
   throw new CliError(`Initial WebTAK user bootstrap failed: ${failureMessage}`);
 }
 
+async function maybeRegisterComposeProfiles(
+  io: IO,
+  prompt: DeployServices["prompt"],
+  options: DeployWizardOptions,
+  envValues: DeployEnvironmentValues,
+  request: DeployRequest
+): Promise<string[]> {
+  if (request.yes) {
+    return [];
+  }
+
+  const shouldAddProfiles = await prompt.confirm({
+    defaultValue: true,
+    message: "Add this deployment to TAKCLI profiles?"
+  });
+
+  if (!shouldAddProfiles) {
+    return [];
+  }
+
+  const loaded = await loadConfig(options.configPath, { allowMissing: true });
+  const nextProfiles = { ...loaded.config.profiles };
+  const savedNames: string[] = [];
+
+  const defaultProfileName = request.deploymentName;
+  nextProfiles[defaultProfileName] = profileSchema.parse({
+    description: `Local compose deployment ${request.deploymentName}`,
+    ports: {
+      api: 8446,
+      cot: 8089,
+      enrollment: 8443,
+      federation: 8444
+    },
+    server: `https://${DEPLOY_PROFILE_HOST}:8446`,
+    tls: {
+      insecureSkipVerify: true
+    }
+  });
+  savedNames.push(defaultProfileName);
+
+  const adminProfileName = `${request.deploymentName}-admin`;
+  const adminCertFile = path.join(request.certsDir, "files", `${envValues.adminCertName}.pem`);
+  const adminKeyFile = path.join(request.certsDir, "files", `${envValues.adminCertName}.key`);
+  const adminCaFile = path.join(request.certsDir, "files", "root-ca.pem");
+  nextProfiles[adminProfileName] = profileSchema.parse({
+    description: `Local compose admin profile for ${request.deploymentName}`,
+    ports: {
+      api: 8443,
+      cot: 8089,
+      enrollment: 8443,
+      federation: 8444
+    },
+    server: `https://${DEPLOY_PROFILE_HOST}:8443`,
+    tls: {
+      caFile: adminCaFile,
+      certFile: adminCertFile,
+      insecureSkipVerify: true,
+      keyFile: adminKeyFile
+    }
+  });
+  savedNames.push(adminProfileName);
+
+  const setCurrent = await prompt.confirm({
+    defaultValue: true,
+    message: `Set ${defaultProfileName} as the current TAKCLI profile?`
+  });
+
+  const nextConfig = configSchema.parse({
+    ...loaded.config,
+    currentProfile: setCurrent ? defaultProfileName : loaded.config.currentProfile,
+    profiles: nextProfiles
+  });
+  await saveConfig(loaded.path, nextConfig);
+
+  io.stdout(
+    `Saved TAKCLI profiles to ${loaded.path}: ${savedNames.join(", ")}${setCurrent ? ` (current: ${defaultProfileName})` : ""}\n`
+  );
+
+  return savedNames;
+}
+
+async function saveTrackedDeployment(
+  configPath: string | undefined,
+  deploymentName: string,
+  deployment: TrackedDeployment
+): Promise<string> {
+  const loaded = await loadDeploymentState(configPath, { allowMissing: true });
+  const nextState = {
+    ...loaded.state,
+    deployments: {
+      ...loaded.state.deployments,
+      [deploymentName]: deployment
+    }
+  };
+  await saveDeploymentState(loaded.path, nextState);
+  return loaded.path;
+}
+
+async function runWithDeploymentFeedback<T>(
+  io: IO,
+  label: string,
+  enabled: boolean,
+  action: () => Promise<T>
+): Promise<T> {
+  if (!enabled) {
+    return await action();
+  }
+
+  return await withSpinner(io, label, action);
+}
+
 function buildPlanLines(request: DeployRequest, gitCommit: string): string[] {
   const images = createDeployImages(request.registry, request.imageTag);
   const executionLine = request.dryRun
@@ -535,12 +666,18 @@ export async function runDeployWizard(
     );
 
     if (!request.dryRun) {
-      const upResult = await services.runner.run(
-        "docker",
-        ["compose", "-f", compose.composeFilePath, "up", "-d"],
-        {
-          cwd: request.deploymentRoot
-        }
+      const upResult = await runWithDeploymentFeedback(
+        io,
+        "Starting Docker Compose deployment",
+        !options.json,
+        async () =>
+          await services.runner.run(
+          "docker",
+          ["compose", "-f", compose.composeFilePath, "up", "-d"],
+          {
+            cwd: request.deploymentRoot
+          }
+        )
       );
       if (upResult.exitCode !== 0) {
         throw new CliError(`docker compose up failed: ${upResult.stderr || upResult.stdout}`);
@@ -548,9 +685,39 @@ export async function runDeployWizard(
       steps.push(`Started docker compose deployment from ${compose.composeFilePath}`);
 
       if (request.webtakUser) {
-        await bootstrapComposeWebTakUser(services.runner, request, compose.composeFilePath);
+        await runWithDeploymentFeedback(
+          io,
+          `Creating initial WebTAK user ${request.webtakUser.username}`,
+          !options.json,
+          async () => await bootstrapComposeWebTakUser(services.runner, request, compose.composeFilePath)
+        );
         steps.push(`Created initial WebTAK user ${request.webtakUser.username} for the 8446 login`);
       }
+
+      const savedProfiles = await maybeRegisterComposeProfiles(io, services.prompt, options, envValues, request);
+      for (const profileName of savedProfiles) {
+        steps.push(`Saved TAKCLI profile ${profileName}`);
+      }
+
+      result.statePath = await saveTrackedDeployment(options.configPath, request.deploymentName, {
+        certsDir: request.certsDir,
+        compose: {
+          composeFilePath: compose.composeFilePath,
+          envFilePath: compose.envFilePath
+        },
+        createdAt: new Date().toISOString(),
+        dataDir: request.dataDir,
+        deploymentRoot: request.deploymentRoot,
+        gitCommit: clone.gitCommit,
+        imageTag: request.imageTag,
+        logsDir: request.logsDir,
+        profileNames: savedProfiles,
+        ref: request.ref,
+        registry: request.registry,
+        repoUrl: request.repoUrl,
+        target: request.target
+      });
+      steps.push(`Tracked deployment in ${result.statePath}`);
     } else {
       steps.push("Skipped docker compose up because --dry-run was requested");
     }
@@ -569,17 +736,43 @@ export async function runDeployWizard(
     );
 
     if (!request.dryRun) {
-      const applyResult = await services.runner.run(
-        "kubectl",
-        ["apply", "-f", kubernetes.manifestPath],
-        {
-          cwd: request.deploymentRoot
-        }
+      const applyResult = await runWithDeploymentFeedback(
+        io,
+        "Applying Kubernetes manifests",
+        !options.json,
+        async () =>
+          await services.runner.run(
+          "kubectl",
+          ["apply", "-f", kubernetes.manifestPath],
+          {
+            cwd: request.deploymentRoot
+          }
+        )
       );
       if (applyResult.exitCode !== 0) {
         throw new CliError(`kubectl apply failed: ${applyResult.stderr || applyResult.stdout}`);
       }
       steps.push(`Applied Kubernetes manifests from ${kubernetes.manifestPath}`);
+
+      result.statePath = await saveTrackedDeployment(options.configPath, request.deploymentName, {
+        certsDir: request.certsDir,
+        createdAt: new Date().toISOString(),
+        dataDir: request.dataDir,
+        deploymentRoot: request.deploymentRoot,
+        gitCommit: clone.gitCommit,
+        imageTag: request.imageTag,
+        kubernetes: {
+          manifestPath: kubernetes.manifestPath,
+          namespace: kubernetes.namespace
+        },
+        logsDir: request.logsDir,
+        profileNames: [],
+        ref: request.ref,
+        registry: request.registry,
+        repoUrl: request.repoUrl,
+        target: request.target
+      });
+      steps.push(`Tracked deployment in ${result.statePath}`);
     } else {
       steps.push("Skipped kubectl apply because --dry-run was requested");
     }
@@ -596,6 +789,7 @@ export async function runDeployWizard(
       `Workspace: ${result.compose.workspacePath}`,
       `Compose file: ${result.compose.composeFilePath}`,
       `Images: ${result.compose.images.server} and ${result.compose.images.db}`,
+      result.statePath ? `State file: ${result.statePath}` : "State file: not tracked",
       request.dryRun ? "Docker Compose was not started." : "Docker Compose stack started."
     ]);
   } else if (result.kubernetes) {
@@ -605,6 +799,7 @@ export async function runDeployWizard(
       `Manifest: ${result.kubernetes.manifestPath}`,
       `Namespace: ${result.kubernetes.namespace}`,
       `Images: ${result.kubernetes.images.server} and ${result.kubernetes.images.db}`,
+      result.statePath ? `State file: ${result.statePath}` : "State file: not tracked",
       "Kubernetes support is experimental.",
       request.dryRun ? "Kubernetes manifests were not applied." : "Kubernetes manifests applied."
     ]);

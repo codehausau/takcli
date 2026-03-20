@@ -6,6 +6,7 @@ import { CliError, type IO } from "../runtime.js";
 
 function addSharedOptions(command: Command): Command {
   return command
+    .addOption(new Option("--config <path>", "Override the config file path"))
     .addOption(new Option("--json", "Emit JSON output"))
     .addOption(
       new Option("--target <target>", "Deployment target (`kubernetes` is experimental)").choices([
@@ -49,6 +50,7 @@ export function createDeployCommand(io: IO, services: DeployServices): Command {
           adminCertName: options.adminCertName,
           adminCertPass: options.adminCertPass,
           cacheRoot: options.cacheRoot,
+          configPath: options.config,
           caName: options.caName,
           caPass: options.caPass,
           certsDir: options.certsDir,
