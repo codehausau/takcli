@@ -23,10 +23,14 @@ jobs:
           node-version: 22
 
       - name: Install Trivy
-        uses: aquasecurity/setup-trivy@v0.2.3
-        with:
-          cache: true
-          version: v0.68.1
+        run: |
+          TRIVY_VERSION="0.68.1"
+          curl -fsSL \
+            -o trivy.tar.gz \
+            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          tar -xzf trivy.tar.gz trivy
+          sudo install -m 0755 trivy /usr/local/bin/trivy
+          trivy --version
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
