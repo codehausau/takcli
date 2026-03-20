@@ -22,6 +22,12 @@ jobs:
           cache: pnpm
           node-version: 22
 
+      - name: Install Trivy
+        uses: aquasecurity/setup-trivy@v0.2.3
+        with:
+          cache: true
+          version: v0.68.1
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -38,15 +44,14 @@ jobs:
         run: pnpm build
 
       - name: Trivy filesystem scan
-        uses: aquasecurity/trivy-action@v0.32.0
-        with:
-          exit-code: "1"
-          ignore-unfixed: true
-          scan-ref: .
-          scan-type: fs
-          scanners: vuln
-          severity: HIGH,CRITICAL
-          vuln-type: library
+        run: |
+          trivy fs \
+            --exit-code 1 \
+            --ignore-unfixed \
+            --pkg-types library \
+            --scanners vuln \
+            --severity HIGH,CRITICAL \
+            .
 
       - name: Pack npm tarball
         run: pnpm pack
@@ -71,11 +76,11 @@ jobs:
           docker run --rm takcli-smoke version
 
       - name: Trivy image scan
-        uses: aquasecurity/trivy-action@v0.32.0
-        with:
-          exit-code: "1"
-          format: table
-          ignore-unfixed: true
-          image-ref: takcli-smoke
-          severity: HIGH,CRITICAL
-          vuln-type: os,library
+        run: |
+          trivy image \
+            --exit-code 1 \
+            --format table \
+            --ignore-unfixed \
+            --pkg-types os,library \
+            --severity HIGH,CRITICAL \
+            takcli-smoke
