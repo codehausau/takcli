@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.7.0](https://github.com/codehausau/takcli/compare/takcli-v0.6.0...takcli-v0.7.0) (2026-03-20)
+
+
+### Features
+
+* add takcli command banner ([7de115e](https://github.com/codehausau/takcli/commit/7de115e79671379e08ee79cfca007d5f96139221))
+* polish cli output and prompts ([ea6c628](https://github.com/codehausau/takcli/commit/ea6c6288c0f5942ca1ea3d28f7372c36ed39b1a0))
+* polish cli output and prompts ([4b3cd6f](https://github.com/codehausau/takcli/commit/4b3cd6f2984e9380537b0bc1f93103f9e0953561))
+
 ## [0.6.0](https://github.com/codehausau/takcli/compare/takcli-v0.5.1...takcli-v0.6.0) (2026-03-20)
 
 
