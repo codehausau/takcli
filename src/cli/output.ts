@@ -1,3 +1,5 @@
+import process from "node:process";
+
 import type { IO } from "./runtime.js";
 
 export function writeJson(io: IO, value: unknown): void {
@@ -21,4 +23,31 @@ export function renderTable(headers: string[], rows: string[][]): string[] {
     row.map((value, index) => (value ?? "").padEnd(widths[index], " ")).join("  ");
 
   return [renderRow(headers), ...rows.map(renderRow)];
+}
+
+export async function withSpinner<T>(
+  io: IO,
+  label: string,
+  action: () => Promise<T>
+): Promise<T> {
+  if (!process.stdout.isTTY) {
+    io.stdout(`${label}...\n`);
+    return await action();
+  }
+
+  const frames = ["|", "/", "-", "\\"];
+  let index = 0;
+
+  io.stdout(`\r${frames[index]} ${label}`);
+  const timer = setInterval(() => {
+    index = (index + 1) % frames.length;
+    io.stdout(`\r${frames[index]} ${label}`);
+  }, 100);
+
+  try {
+    return await action();
+  } finally {
+    clearInterval(timer);
+    io.stdout(`\r${" ".repeat(label.length + 2)}\r`);
+  }
 }

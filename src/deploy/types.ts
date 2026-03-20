@@ -75,6 +75,7 @@ export interface DeployWizardOptions {
   adminCertName?: string;
   adminCertPass?: string;
   cacheRoot?: string;
+  configPath?: string;
   caName?: string;
   caPass?: string;
   certsDir?: string;
@@ -146,6 +147,7 @@ export interface DeployResult {
   imageTag: string;
   kubernetes?: KubernetesWorkspace;
   registry: string;
+  statePath?: string;
   steps: string[];
   target: DeployTarget;
 }
