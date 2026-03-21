@@ -45,6 +45,17 @@ describe("completion support", () => {
     expect(suggestions).toContain("users");
   });
 
+  it("suggests observe at the top level", () => {
+    const program = createCli({
+      stderr: () => undefined,
+      stdout: () => undefined
+    });
+
+    const suggestions = getCompletionSuggestions(program, ["ob"]);
+
+    expect(suggestions).toContain("observe");
+  });
+
   it("suggests nested profile subcommands", () => {
     const program = createCli({
       stderr: () => undefined,
@@ -76,6 +87,28 @@ describe("completion support", () => {
     const suggestions = getCompletionSuggestions(program, ["users", "g"]);
 
     expect(suggestions).toContain("groups");
+  });
+
+  it("suggests nested observe subcommands", () => {
+    const program = createCli({
+      stderr: () => undefined,
+      stdout: () => undefined
+    });
+
+    const suggestions = getCompletionSuggestions(program, ["observe", "l"]);
+
+    expect(suggestions).toContain("logs");
+  });
+
+  it("suggests observe logs options", () => {
+    const program = createCli({
+      stderr: () => undefined,
+      stdout: () => undefined
+    });
+
+    const suggestions = getCompletionSuggestions(program, ["observe", "logs", "--d"]);
+
+    expect(suggestions).toContain("--deployment");
   });
 
   it("suggests command options", () => {

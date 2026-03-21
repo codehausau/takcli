@@ -8,6 +8,7 @@ The first milestone focuses on:
 - profile and active-context management
 - TAK server diagnostics with `doctor`
 - TAK server operational summaries with `status`
+- curated log observation with `observe logs`
 - CoT query, target discovery, injection, and stream following with `cot`
 - interactive Docker Compose deployment with `deploy`
 - human-friendly output with stable `--json`
@@ -42,6 +43,7 @@ Run diagnostics:
 ```bash
 takcli doctor
 takcli status
+takcli observe logs list --deployment tak-demo
 takcli cot query --uid my-uid
 takcli cot targets
 takcli users list
@@ -93,6 +95,8 @@ profiles:
 - `takcli completion <bash|zsh|fish>`
 - `takcli doctor`
 - `takcli status`
+- `takcli observe logs list`
+- `takcli observe logs <target>`
 - `takcli cot query`
 - `takcli cot targets`
 - `takcli cot inject`
@@ -140,9 +144,6 @@ Several strong next-step CLI surfaces for `takcli` are:
 - `takcli federation`
   - enable federation, upload federate certs, create connections, and manage outbound / mapped groups
   - inspect mission disruption tolerance and data-package / mission file blocking settings
-- `takcli observe`
-  - surface metrics and log locations
-  - tail messaging / API logs and summarize common failure modes
 - `takcli retention`
   - drive the data retention tool and validate retention configuration
 
@@ -150,8 +151,8 @@ The best near-term sequence is probably:
 1. `cert`
 2. `users` / `auth`
 3. `federation`
-4. `observe`
-5. Kubernetes deploy support
+4. Kubernetes deploy support
+5. deeper observe summaries and metrics
 
 ## Deploy workflows
 
@@ -265,6 +266,31 @@ takcli users groups add alice --in-group Red
 takcli users groups remove alice --out-group Green
 takcli users groups members Blue
 takcli users delete alice
+```
+
+## Observe workflows
+
+`takcli observe logs` works against deployments already tracked by `takcli deploy`. If you have more than one tracked deployment, pass `--deployment <name>` or switch to a profile associated with the deployment you want to inspect.
+
+List curated log targets:
+
+```bash
+takcli observe logs list --deployment tak-demo
+takcli observe logs list --deployment tak-cluster --json
+```
+
+Read recent lines from a tracked server log:
+
+```bash
+takcli observe logs api --deployment tak-demo --lines 200
+takcli observe logs config-console --deployment tak-demo
+```
+
+Follow a live log stream:
+
+```bash
+takcli observe logs messaging --deployment tak-demo --follow
+takcli observe logs database --deployment tak-cluster --follow
 ```
 
 ## CLI demos
