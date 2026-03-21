@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.0](https://github.com/codehausau/takcli/compare/takcli-v0.7.0...takcli-v0.8.0) (2026-03-21)
+
+
+### Features
+
+* add observe logs support for tracked deployments ([34bbb75](https://github.com/codehausau/takcli/commit/34bbb751884e076a262dc62354dc1eeef663da0c))
+* add observe logs support for tracked deployments ([b55aea4](https://github.com/codehausau/takcli/commit/b55aea490d389ed5d7d46d0291715e18c9536d5a))
+
 ## [0.7.0](https://github.com/codehausau/takcli/compare/takcli-v0.6.0...takcli-v0.7.0) (2026-03-20)
 
 
