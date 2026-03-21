@@ -13,6 +13,7 @@ import { CliError } from "../../src/cli/runtime.js";
 import { loadConfig } from "../../src/core/config-store.js";
 import { loadDeploymentState } from "../../src/deploy/state.js";
 import type { CommandRunner, DeployPrompt } from "../../src/deploy/types.js";
+import { createDefaultObserveServices } from "../../src/observe/service.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -144,7 +145,18 @@ function createServices(runner: CommandRunner): CliServices {
     deploy: {
       prompt: unusedPrompt,
       runner
-    }
+    },
+    observe: createDefaultObserveServices()
+  };
+}
+
+function createServicesWithPrompt(prompt: DeployPrompt, runner: CommandRunner): CliServices {
+  return {
+    deploy: {
+      prompt,
+      runner
+    },
+    observe: createDefaultObserveServices()
   };
 }
 
@@ -640,12 +652,7 @@ describe("deploy integration", () => {
         "--json"
       ],
       io.io,
-      {
-        deploy: {
-          prompt: new DefaultingPrompt(),
-          runner
-        }
-      }
+      createServicesWithPrompt(new DefaultingPrompt(), runner)
     );
 
     expect(exitCode).toBe(0);
@@ -694,12 +701,7 @@ describe("deploy integration", () => {
         "--dry-run"
       ],
       io.io,
-      {
-        deploy: {
-          prompt,
-          runner
-        }
-      }
+      createServicesWithPrompt(prompt, runner)
     );
 
     expect(exitCode).toBe(0);
@@ -746,12 +748,7 @@ describe("deploy integration", () => {
         "--dry-run"
       ],
       io.io,
-      {
-        deploy: {
-          prompt,
-          runner
-        }
-      }
+      createServicesWithPrompt(prompt, runner)
     );
 
     expect(exitCode).toBe(0);
@@ -793,12 +790,7 @@ describe("deploy integration", () => {
         "--dry-run"
       ],
       io.io,
-      {
-        deploy: {
-          prompt,
-          runner
-        }
-      }
+      createServicesWithPrompt(prompt, runner)
     );
 
     expect(exitCode).toBe(0);
@@ -840,12 +832,7 @@ describe("deploy integration", () => {
         "--dry-run"
       ],
       io.io,
-      {
-        deploy: {
-          prompt,
-          runner
-        }
-      }
+      createServicesWithPrompt(prompt, runner)
     );
 
     expect(exitCode).toBe(0);
@@ -889,12 +876,7 @@ describe("deploy integration", () => {
         "--dry-run"
       ],
       io.io,
-      {
-        deploy: {
-          prompt,
-          runner
-        }
-      }
+      createServicesWithPrompt(prompt, runner)
     );
 
     expect(exitCode).toBe(0);
@@ -937,12 +919,7 @@ describe("deploy integration", () => {
         "--json"
       ],
       io.io,
-      {
-        deploy: {
-          prompt,
-          runner
-        }
-      }
+      createServicesWithPrompt(prompt, runner)
     );
 
     expect(exitCode).toBe(0);
@@ -1220,12 +1197,7 @@ describe("deploy integration", () => {
         "latest"
       ],
       io.io,
-      {
-        deploy: {
-          prompt,
-          runner
-        }
-      }
+      createServicesWithPrompt(prompt, runner)
     );
 
     expect(exitCode).toBe(0);
