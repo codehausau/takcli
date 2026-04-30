@@ -61,13 +61,18 @@ export interface CotTargetsResult {
 export interface CotInjectInput {
   callsign?: string;
   ce: number;
+  course?: number;
   hae: number;
   how: string;
   lat: number;
   le: number;
   lon: number;
   remarks?: string;
+  speed?: number;
+  start?: string;
   staleSeconds: number;
+  stale?: string;
+  time?: string;
   type: string;
   uid: string;
 }

@@ -20,7 +20,7 @@ COPY package.json pnpm-lock.yaml ./
 RUN corepack enable
 RUN pnpm install --prod --frozen-lockfile --ignore-scripts
 
-FROM gcr.io/distroless/nodejs22-debian12 AS runtime
+FROM node:22-alpine AS runtime
 
 WORKDIR /app
 
@@ -30,4 +30,8 @@ COPY --from=build /app/dist ./dist
 COPY README.md ./
 COPY scripts ./scripts
 
-ENTRYPOINT ["/nodejs/bin/node", "/app/dist/cli.js"]
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+
+USER node
+
+ENTRYPOINT ["node", "/app/dist/cli.js"]

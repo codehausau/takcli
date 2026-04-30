@@ -12,6 +12,7 @@ import { createDeployCommand } from "./commands/deploy.js";
 import { createDoctorCommand } from "./commands/doctor.js";
 import { createObserveCommand } from "./commands/observe.js";
 import { createProfileCommand } from "./commands/profile.js";
+import { createReplayCommand } from "./commands/replay.js";
 import { createStatusCommand } from "./commands/status.js";
 import { createUsersCommand } from "./commands/users.js";
 import { CliError, createProcessIo, writeError, writeLine, type IO } from "./runtime.js";
@@ -44,6 +45,7 @@ export function createCli(io: IO = createProcessIo(), services: CliServices = cr
   program.addCommand(createObserveCommand(io, services.observe));
   program.addCommand(createStatusCommand(io));
   program.addCommand(createProfileCommand(io));
+  program.addCommand(createReplayCommand(io));
   program.addCommand(createUsersCommand(io));
   program.addCommand(createHiddenCompletionCommand(program, io));
   program
