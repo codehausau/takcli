@@ -101,6 +101,7 @@ profiles:
 - `takcli cot targets`
 - `takcli cot inject`
 - `takcli cot follow`
+- `takcli replay file`
 - `takcli deploy`
 - `takcli profile list`
 - `takcli profile add`
@@ -237,6 +238,32 @@ Follow the live CoT stream:
 ```bash
 takcli cot follow
 takcli cot follow --limit 10 --json
+```
+
+## Replay workflows
+
+Replay a historical GeoJSON vessel-track file into the TAK CoT stream:
+
+```bash
+takcli replay file ../data/adelaide-100km-march-2026.geojson \
+  --source auto \
+  --start-from start \
+  --speed 3600
+```
+
+Replay the same kind of dataset from an HTTP or HTTPS URL:
+
+```bash
+takcli replay file https://example.invalid/tracks.geojson \
+  --source auto \
+  --start-from start \
+  --speed 3600
+```
+
+Inspect the detected source and time range without sending CoT:
+
+```bash
+takcli replay file ../data/adelaide-100km-march-2026.geojson --describe
 ```
 
 ## User workflows

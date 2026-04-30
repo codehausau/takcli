@@ -1,8 +1,14 @@
 import { readFileSync } from "node:fs";
 import net from "node:net";
 import tls from "node:tls";
+import { setTimeout as delay } from "node:timers/promises";
 
 import type { ResolvedProfile } from "../../core/profile-resolution.js";
+
+export interface CotEventWriter {
+  close: () => Promise<void>;
+  send: (xml: string) => Promise<number>;
+}
 
 function ensureValidTlsPair(profile: ResolvedProfile): void {
   const hasCert = Boolean(profile.tls.certFile);
@@ -63,26 +69,98 @@ export async function sendCotEventXml(
   xml: string,
   timeoutMs: number
 ): Promise<number> {
-  const socket = await connectCotSocket(profile, timeoutMs);
+  const writer = await openCotEventWriter(profile, timeoutMs);
 
-  return new Promise<number>((resolve, reject) => {
-    socket.write(xml, "utf8", (error) => {
-      if (error) {
-        socket.destroy();
-        reject(describeStreamError(error));
+  try {
+    return await writer.send(xml);
+  } finally {
+    await writer.close();
+  }
+}
+
+export async function openCotEventWriter(
+  profile: ResolvedProfile,
+  timeoutMs: number
+): Promise<CotEventWriter> {
+  const socket = await connectCotSocket(profile, timeoutMs);
+  let closed = false;
+  let fatalError: Error | undefined;
+
+  socket.on("error", (error) => {
+    fatalError = describeStreamError(error);
+  });
+
+  return {
+    close: async () => {
+      if (closed) {
         return;
       }
 
-      const bytesSent = Buffer.byteLength(xml, "utf8");
-      socket.end();
-      resolve(bytesSent);
-    });
+      closed = true;
+      await new Promise<void>((resolve) => {
+        let settled = false;
 
-    socket.once("error", (error) => {
-      socket.destroy();
-      reject(describeStreamError(error));
-    });
-  });
+        const finish = () => {
+          if (settled) {
+            return;
+          }
+
+          settled = true;
+          socket.off("close", finish);
+          resolve();
+        };
+
+        socket.once("close", finish);
+        socket.end(() => finish());
+        void delay(1000).then(() => {
+          if (!settled) {
+            socket.destroy();
+          }
+          finish();
+        });
+      });
+    },
+    send: async (xml: string) => {
+      if (closed) {
+        throw new Error("The CoT writer is already closed.");
+      }
+
+      if (fatalError) {
+        throw fatalError;
+      }
+
+      return await new Promise<number>((resolve, reject) => {
+        const bytesSent = Buffer.byteLength(xml, "utf8");
+
+        const cleanup = () => {
+          socket.off("close", onClose);
+          socket.off("error", onError);
+        };
+
+        const onClose = () => {
+          cleanup();
+          reject(new Error("The CoT connection closed before the event was written."));
+        };
+
+        const onError = (error: unknown) => {
+          cleanup();
+          reject(describeStreamError(error));
+        };
+
+        socket.once("close", onClose);
+        socket.once("error", onError);
+        socket.write(xml, "utf8", (error) => {
+          cleanup();
+          if (error) {
+            reject(describeStreamError(error));
+            return;
+          }
+
+          resolve(bytesSent);
+        });
+      });
+    }
+  };
 }
 
 export async function streamCotEvents(
