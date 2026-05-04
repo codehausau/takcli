@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.10.0](https://github.com/codehausau/takcli/compare/takcli-v0.9.0...takcli-v0.10.0) (2026-05-04)
+
+
+### Features
+
+* add TAK map and replay console ([2e7d5ad](https://github.com/codehausau/takcli/commit/2e7d5ad00ce31c48a75ef587da593bcd75549cfe))
+* add TAK map and replay console ([12d67f0](https://github.com/codehausau/takcli/commit/12d67f090b3e8747cd51fe44a77020af2e25f9dc))
+
+
+### Bug Fixes
+
+* resolve lint failures in map and replay UI ([f750bc4](https://github.com/codehausau/takcli/commit/f750bc40c1287698c9cd531615555f43bed0e926))
+
 ## [0.9.0](https://github.com/codehausau/takcli/compare/takcli-v0.8.0...takcli-v0.9.0) (2026-04-30)
 
 
