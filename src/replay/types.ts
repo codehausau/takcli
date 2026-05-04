@@ -100,7 +100,6 @@ export interface ReplayTelemetrySnapshot {
   state: "completed" | "idle" | "paused" | "running" | "stopped";
   updatedAt: string;
 }
-
 export interface ReplayRunner {
   getSnapshot: () => ReplayProgressSnapshot;
   pause: () => void;

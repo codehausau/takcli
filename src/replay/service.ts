@@ -75,7 +75,6 @@ class ReplayRunnerImpl implements ReplayRunner {
   private currentIndex: number;
 
   private lastSentTrackPoint: ReplayTrackPoint | undefined;
-
   private paused = false;
 
   private pendingIndex: number | undefined;
