@@ -89,7 +89,6 @@ export interface DeployWizardOptions {
   adsbLat?: string;
   adsbLon?: string;
   adsbSource?: "geo" | "mil";
-  cacheRoot?: string;
   configPath?: string;
   caName?: string;
   caPass?: string;
@@ -107,9 +106,7 @@ export interface DeployWizardOptions {
   organization?: string;
   organizationalUnit?: string;
   postgresPassword?: string;
-  ref?: string;
   registry?: string;
-  repoUrl?: string;
   saveProfiles?: boolean;
   state?: string;
   takserverCertPass?: string;
@@ -123,7 +120,6 @@ export interface DeployWizardOptions {
 export interface DeployRequest {
   adsb?: DeployAdsbOptions;
   certsDir: string;
-  cacheRoot?: string;
   dataDir: string;
   dbImage: string;
   deploymentName: string;
@@ -132,9 +128,7 @@ export interface DeployRequest {
   flavor: "unhardened";
   imageTag: string;
   logsDir: string;
-  ref: string;
   registry: string;
-  repoUrl: string;
   target: DeployTarget;
   webtakUser?: DeployBootstrapWebTakUser;
   yes: boolean;
@@ -146,7 +140,6 @@ export interface ComposeWorkspace {
   deploymentMetadataPath: string;
   envFilePath: string;
   images: ComposeImageSet;
-  upstreamSourcePath: string;
   workspacePath: string;
 }
 
@@ -159,11 +152,10 @@ export interface KubernetesWorkspace {
 }
 
 export interface DeployResult {
-  clonePath: string;
   compose?: ComposeWorkspace;
   deploymentName: string;
   dryRun: boolean;
-  gitCommit: string;
+  gitCommit?: string;
   imageTag: string;
   kubernetes?: KubernetesWorkspace;
   registry: string;

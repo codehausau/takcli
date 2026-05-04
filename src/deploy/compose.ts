@@ -1,9 +1,8 @@
 import path from "node:path";
-import { cp, mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 
 import YAML from "yaml";
 
-import { CliError } from "../cli/runtime.js";
 import { createDeployImages } from "./images.js";
 import type {
   DeployAdsbOptions,
@@ -13,7 +12,6 @@ import type {
   DeployRequest
 } from "./types.js";
 
-const FULL_COMPOSE_RELATIVE_PATH = path.join("src", "takserver-core", "docker", "full");
 const DEFAULT_ADSB_GATEWAY_POLL_INTERVAL_SECONDS = 60;
 
 function renderAdsbGatewayDockerfile(): string {
@@ -114,7 +112,11 @@ export function renderTakCliComposeYaml(images: ComposeImageSet, request: Deploy
       stop_grace_period: "30s",
       networks: ["taknet"],
       ports: ["8089:8089", "8443:8443", "8444:8444", "8446:8446", "9000:9000", "9001:9001"],
-      depends_on: ["tak-database"]
+      depends_on: {
+        "tak-database": {
+          condition: "service_healthy"
+        }
+      }
     },
     "tak-database": {
       image: images.db,
@@ -122,6 +124,13 @@ export function renderTakCliComposeYaml(images: ComposeImageSet, request: Deploy
       stop_grace_period: "30s",
       networks: ["taknet"],
       ports: ["5432:5432"],
+      healthcheck: {
+        test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U martiuser -d cot || exit 1"],
+        interval: "10s",
+        timeout: "5s",
+        retries: 30,
+        start_period: "120s"
+      },
       volumes: [`${dbDataDir}:/var/lib/postgresql/data`]
     }
   };
@@ -154,37 +163,9 @@ export function renderTakCliComposeYaml(images: ComposeImageSet, request: Deploy
 }
 
 export async function prepareComposeWorkspace(options: {
-  clonePath: string;
   envValues: DeployEnvironmentValues;
-  gitCommit: string;
   request: DeployRequest;
 }): Promise<ComposeWorkspace> {
-  const upstreamSourcePath = path.join(options.clonePath, FULL_COMPOSE_RELATIVE_PATH);
-  const requiredFiles = [
-    path.join(upstreamSourcePath, "docker-compose.yml"),
-    path.join(upstreamSourcePath, "EDIT_ME.env")
-  ];
-
-  for (const filePath of requiredFiles) {
-    try {
-      await mkdir(path.dirname(filePath), { recursive: true });
-    } catch {
-      // nothing
-    }
-  }
-
-  await cp(
-    upstreamSourcePath,
-    path.join(options.request.deploymentRoot, "upstream", "full"),
-    { recursive: true }
-  ).catch((error: unknown) => {
-    throw new CliError(
-      `Unable to locate Docker Compose assets in the TAK Server clone at ${upstreamSourcePath}: ${
-        error instanceof Error ? error.message : String(error)
-      }`
-    );
-  });
-
   await mkdir(options.request.deploymentRoot, { recursive: true });
   await mkdir(options.request.dataDir, { recursive: true });
   await mkdir(options.request.logsDir, { recursive: true });
@@ -217,10 +198,7 @@ export async function prepareComposeWorkspace(options: {
       addons: options.request.adsb ? ["ads-b"] : [],
       deploymentName: options.request.deploymentName,
       flavor: options.request.flavor,
-      gitCommit: options.gitCommit,
-      ref: options.request.ref,
       registry: options.request.registry,
-      repoUrl: options.request.repoUrl,
       target: options.request.target,
       workspace: {
         certsDir: options.request.certsDir,
@@ -239,7 +217,6 @@ export async function prepareComposeWorkspace(options: {
     deploymentMetadataPath,
     envFilePath,
     images,
-    upstreamSourcePath,
     workspacePath: options.request.deploymentRoot
   };
 }

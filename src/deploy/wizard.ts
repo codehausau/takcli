@@ -9,9 +9,9 @@ import { CliError, type IO } from "../cli/runtime.js";
 import { loadConfig, saveConfig } from "../core/config-store.js";
 import { configSchema, profileSchema } from "../core/schema.js";
 import { prepareComposeWorkspace } from "./compose.js";
-import { createDeployImages, DEFAULT_DB_IMAGE, inferImageTag } from "./images.js";
+import { createDefaultDbImage, createDeployImages } from "./images.js";
 import { prepareKubernetesWorkspace } from "./kubernetes.js";
-import { ensureTakServerClone, getDefaultDeploymentRoot } from "./repo.js";
+import { getDefaultDeploymentRoot } from "./repo.js";
 import { loadDeploymentState, saveDeploymentState, type TrackedDeployment } from "./state.js";
 import { checkDeployDependencies } from "./system.js";
 import type {
@@ -25,7 +25,6 @@ import type {
   DeployWizardOptions
 } from "./types.js";
 
-const DEFAULT_REPO_URL = "https://github.com/TAK-Product-Center/Server.git";
 const DEFAULT_REGISTRY = "docker.io/codehausau";
 const MIN_CERTIFICATE_PASSWORD_LENGTH = 6;
 const MIN_WEBTAK_PASSWORD_LENGTH = 15;
@@ -48,16 +47,6 @@ function normalizePath(value: string): string {
     return path.join(os.homedir(), value.slice(2));
   }
   return path.resolve(value);
-}
-
-function defaultImageTagForRef(ref: string): string {
-  const inferredTag = inferImageTag(ref);
-
-  if (!inferredTag || inferredTag === "main") {
-    return "latest";
-  }
-
-  return inferredTag;
 }
 
 async function resolvePromptedValue(
@@ -693,7 +682,7 @@ async function runWithDeploymentFeedback<T>(
   return await withSpinner(io, label, action);
 }
 
-function buildPlanLines(request: DeployRequest, gitCommit: string): string[] {
+function buildPlanLines(request: DeployRequest): string[] {
   const images = createDeployImages(request.registry, request.imageTag, request.dbImage);
   const executionLine = request.dryRun
     ? "Execution: dry-run (workspace generation only)"
@@ -708,9 +697,7 @@ function buildPlanLines(request: DeployRequest, gitCommit: string): string[] {
 
   return [
     `Target: ${request.target}`,
-    `TAK Server repo: ${request.repoUrl}`,
-    `TAK Server ref: ${request.ref}`,
-    `Resolved commit: ${gitCommit}`,
+    "Deploy source: TAKCLI-managed deployment templates",
     `Deployment name: ${request.deploymentName}`,
     `Deployment workspace: ${request.deploymentRoot}`,
     `Data dir: ${request.dataDir}`,
@@ -747,7 +734,6 @@ export async function runDeployWizard(
   }
   const adsb = await resolveAdsbOptions(io, options, services.prompt, target);
 
-  const ref = await resolvePromptedValue(options.ref, services.prompt, "TAK Server git ref", "main");
   const deploymentName = await resolvePromptedValue(
     options.deploymentName,
     services.prompt,
@@ -786,9 +772,9 @@ export async function runDeployWizard(
     options.imageTag,
     services.prompt,
     "Docker image tag",
-    defaultImageTagForRef(ref)
+    "latest"
   );
-  const dbImage = options.dbImage ?? DEFAULT_DB_IMAGE;
+  const dbImage = options.dbImage ?? createDefaultDbImage(registry, imageTag);
   let webtakUser = await resolveBootstrapWebTakUser(io, options, services.prompt, target);
   if (webtakUser && webtakUser.password === "") {
     const webtakUsername = webtakUser.username;
@@ -812,7 +798,6 @@ export async function runDeployWizard(
   const request: DeployRequest = {
     adsb,
     certsDir,
-    cacheRoot: options.cacheRoot ? normalizePath(options.cacheRoot) : undefined,
     dataDir,
     dbImage,
     deploymentName,
@@ -821,9 +806,7 @@ export async function runDeployWizard(
     flavor: "unhardened",
     imageTag,
     logsDir,
-    ref,
     registry,
-    repoUrl: options.repoUrl ?? DEFAULT_REPO_URL,
     target,
     webtakUser,
     yes: Boolean(options.yes)
@@ -835,15 +818,8 @@ export async function runDeployWizard(
     validateBootstrapWebTakUser(request.webtakUser);
   }
 
-  const clone = await ensureTakServerClone({
-    cacheRoot: request.cacheRoot,
-    ref: request.ref,
-    repoUrl: request.repoUrl,
-    runner: services.runner
-  });
-
   if (!options.json) {
-    writeSection(io, "Deploy plan", buildPlanLines(request, clone.gitCommit));
+    writeSection(io, "Deploy plan", buildPlanLines(request));
   }
 
   if (!request.yes) {
@@ -856,12 +832,10 @@ export async function runDeployWizard(
     }
   }
 
-  const steps = [`Cloned or reused ${request.repoUrl} at ${clone.clonePath}`];
+  const steps = ["Skipped upstream TAK Server clone; using TAKCLI-managed deployment templates"];
   const result: DeployResult = {
-    clonePath: clone.clonePath,
     deploymentName: request.deploymentName,
     dryRun: request.dryRun,
-    gitCommit: clone.gitCommit,
     imageTag: request.imageTag,
     registry: request.registry,
     steps,
@@ -870,9 +844,7 @@ export async function runDeployWizard(
 
   if (request.target === "docker-compose") {
     const compose = await prepareComposeWorkspace({
-      clonePath: clone.clonePath,
       envValues,
-      gitCommit: clone.gitCommit,
       request
     });
 
@@ -930,13 +902,10 @@ export async function runDeployWizard(
         createdAt: new Date().toISOString(),
         dataDir: request.dataDir,
         deploymentRoot: request.deploymentRoot,
-        gitCommit: clone.gitCommit,
         imageTag: request.imageTag,
         logsDir: request.logsDir,
         profileNames: savedProfiles,
-        ref: request.ref,
         registry: request.registry,
-        repoUrl: request.repoUrl,
         target: request.target
       });
       steps.push(`Tracked deployment in ${result.statePath}`);
@@ -945,9 +914,7 @@ export async function runDeployWizard(
     }
   } else {
     const kubernetes = await prepareKubernetesWorkspace({
-      clonePath: clone.clonePath,
       envValues,
-      gitCommit: clone.gitCommit,
       request
     });
 
@@ -982,7 +949,6 @@ export async function runDeployWizard(
         createdAt: new Date().toISOString(),
         dataDir: request.dataDir,
         deploymentRoot: request.deploymentRoot,
-        gitCommit: clone.gitCommit,
         imageTag: request.imageTag,
         kubernetes: {
           manifestPath: kubernetes.manifestPath,
@@ -990,9 +956,7 @@ export async function runDeployWizard(
         },
         logsDir: request.logsDir,
         profileNames: [],
-        ref: request.ref,
         registry: request.registry,
-        repoUrl: request.repoUrl,
         target: request.target
       });
       steps.push(`Tracked deployment in ${result.statePath}`);

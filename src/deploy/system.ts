@@ -61,8 +61,6 @@ export async function checkDeployDependencies(
   target: DeployTarget
 ): Promise<DependencyCheckResult> {
   const statuses: DependencyStatus[] = [];
-  statuses.push(await probeCommand(runner, "git", "git", ["--version"]));
-
   if (target === "docker-compose") {
     statuses.push(await probeCommand(runner, "docker", "docker", ["--version"]));
     statuses.push(await probeCommand(runner, "docker compose", "docker", ["compose", "version"]));

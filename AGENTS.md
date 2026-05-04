@@ -85,10 +85,8 @@ Published package:
 ### Deploy command
 
 - `deploy` currently targets the published unhardened Docker Compose path
-- it clones or reuses the official `TAK-Product-Center/Server` repo in a TAKCLI cache
-- it does not patch the cloned repo in place
 - it generates TAKCLI-owned deployment files in `~/.takcli/deployments/<name>/`
-- it expects `docker.io/codehausau/takserver-full` for the server image and upstream `postgis/postgis` for the database by default
+- it expects `docker.io/codehausau/takserver-full` for the server image and `docker.io/codehausau/postgres15-postgis3` for the database by default
 - Kubernetes support is planned as the next deployment milestone
 
 ### Guide-driven next features

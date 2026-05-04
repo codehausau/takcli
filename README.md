@@ -250,23 +250,20 @@ takcli start map --no-open
 ## Deploy workflows
 
 `takcli deploy` is a compose-first wizard that:
-- checks for `git`, `docker`, and `docker compose`
-- clones or reuses the official `TAK-Product-Center/Server` repo in `~/.takcli/cache/tak-server`
-- copies the upstream `docker/full` assets into a TAKCLI-managed deployment workspace
-- renders a TAKCLI-owned `.env`, compose file, and deployment metadata beside the upstream copy
+- checks for `docker` and `docker compose`
+- renders a TAKCLI-managed `.env`, compose file, and deployment metadata directly into the deployment workspace
 - prompts for deployment secrets interactively and writes the generated `.env` with restricted permissions
 - starts the stack with `docker compose up -d`
 
 The default image sources are:
 - `docker.io/codehausau/takserver-full:<tag>`
-- `kartoza/postgis:15-3.4`
+- `docker.io/codehausau/postgres15-postgis3:<tag>`
 
 Quick example:
 
 ```bash
 takcli deploy \
   --target docker-compose \
-  --ref main \
   --name tak-demo \
   --registry codehausau \
   --image-tag latest
@@ -277,7 +274,6 @@ For non-interactive use, you can provide the required deployment values up front
 ```bash
 takcli deploy \
   --target docker-compose \
-  --ref main \
   --name tak-demo \
   --deployment-root ~/.takcli/deployments/tak-demo \
   --data-dir ~/.takcli/deployments/tak-demo/data \

@@ -14,17 +14,14 @@ function addSharedOptions(command: Command): Command {
         "kubernetes"
       ])
     )
-    .option("--ref <ref>", "TAK Server git ref")
     .option("--name <name>", "Deployment name")
     .option("--deployment-root <path>", "Deployment workspace path")
     .option("--data-dir <path>", "Deployment data directory")
     .option("--logs-dir <path>", "TAK logs directory")
     .option("--certs-dir <path>", "TAK certs directory")
-    .option("--cache-root <path>", "TAK Server clone cache path")
     .option("--registry <namespace>", "Image registry namespace")
     .option("--image-tag <tag>", "Image tag to deploy")
     .option("--db-image <image>", "Database image to deploy")
-    .option("--repo-url <url>", "TAK Server repository to clone")
     .option("--postgres-password <password>", "Postgres password")
     .option("--ca-name <name>", "Certificate authority name")
     .option("--ca-pass <password>", "Certificate authority password")
@@ -62,7 +59,6 @@ export function createDeployCommand(io: IO, services: DeployServices): Command {
           adsbLat: options.adsbLat,
           adsbLon: options.adsbLon,
           adsbSource: options.adsbSource,
-          cacheRoot: options.cacheRoot,
           configPath: options.config,
           caName: options.caName,
           caPass: options.caPass,
@@ -79,9 +75,7 @@ export function createDeployCommand(io: IO, services: DeployServices): Command {
           organization: options.organization,
           organizationalUnit: options.organizationalUnit,
           postgresPassword: options.postgresPassword,
-          ref: options.ref,
           registry: options.registry,
-          repoUrl: options.repoUrl,
           saveProfiles: Boolean(options.saveProfiles),
           state: options.state,
           takserverCertPass: options.takserverCertPass,
