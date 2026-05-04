@@ -196,7 +196,7 @@ export async function prepareComposeWorkspace(options: {
     await mkdir(adsbWorkspacePath, { recursive: true });
   }
 
-  const images = createDeployImages(options.request.registry, options.request.imageTag);
+  const images = createDeployImages(options.request.registry, options.request.imageTag, options.request.dbImage);
   const composeFilePath = path.join(options.request.deploymentRoot, "docker-compose.yml");
   const envFilePath = path.join(options.request.deploymentRoot, ".env");
   const deploymentMetadataPath = path.join(options.request.deploymentRoot, "takcli-deployment.yaml");

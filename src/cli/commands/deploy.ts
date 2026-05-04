@@ -23,6 +23,7 @@ function addSharedOptions(command: Command): Command {
     .option("--cache-root <path>", "TAK Server clone cache path")
     .option("--registry <namespace>", "Image registry namespace")
     .option("--image-tag <tag>", "Image tag to deploy")
+    .option("--db-image <image>", "Database image to deploy")
     .option("--repo-url <url>", "TAK Server repository to clone")
     .option("--postgres-password <password>", "Postgres password")
     .option("--ca-name <name>", "Certificate authority name")
@@ -67,6 +68,7 @@ export function createDeployCommand(io: IO, services: DeployServices): Command {
           caPass: options.caPass,
           certsDir: options.certsDir,
           city: options.city,
+          dbImage: options.dbImage,
           dataDir: options.dataDir,
           deploymentName: options.name,
           deploymentRoot: options.deploymentRoot,

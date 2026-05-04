@@ -259,7 +259,7 @@ takcli start map --no-open
 
 The default image sources are:
 - `docker.io/codehausau/takserver-full:<tag>`
-- `postgis/postgis:15-3.3`
+- `kartoza/postgis:15-3.4`
 
 Quick example:
 
@@ -300,6 +300,15 @@ takcli deploy \
 ```
 
 Add `--save-profiles` when you want a non-interactive deploy to register the generated local TAK profiles automatically. This creates both `<deployment-name>` and `<deployment-name>-admin` and sets the default profile current.
+
+If you need a different PostGIS image, override it explicitly:
+
+```bash
+takcli deploy \
+  --target docker-compose \
+  --name tak-demo \
+  --db-image your-registry/postgis:custom
+```
 
 Optional ADS-B sidecar examples:
 

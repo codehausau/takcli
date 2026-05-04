@@ -426,12 +426,12 @@ describe("deploy integration", () => {
 
     expect(output.target).toBe("docker-compose");
     expect(output.compose.images.server).toBe("docker.io/codehausau/takserver-full:main");
-    expect(output.compose.images.db).toBe("postgis/postgis:15-3.3");
+    expect(output.compose.images.db).toBe("kartoza/postgis:15-3.4");
     await access(output.compose.composeFilePath);
 
     const composeFile = await readFile(output.compose.composeFilePath, "utf8");
     expect(composeFile).toContain("docker.io/codehausau/takserver-full:main");
-    expect(composeFile).toContain("postgis/postgis:15-3.3");
+    expect(composeFile).toContain("kartoza/postgis:15-3.4");
 
     const envStats = await stat(path.join(deploymentRoot, ".env"));
     expect(envStats.mode & 0o777).toBe(0o600);
@@ -520,6 +520,81 @@ describe("deploy integration", () => {
 
     const adsbConfigStats = await stat(path.join(deploymentRoot, "ads-b", "adsbcot.ini"));
     expect(adsbConfigStats.mode & 0o777).toBe(0o600);
+  });
+
+  it("allows overriding the database image for a compose deployment", async () => {
+    const repoDir = await createFakeTakServerRepo();
+    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
+    const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-compose-db-image-"));
+    const runner = new HybridRunner();
+    const io = createMemoryIo();
+
+    const exitCode = await runCli(
+      [
+        "deploy",
+        "--target",
+        "docker-compose",
+        "--ref",
+        "main",
+        "--repo-url",
+        repoDir,
+        "--cache-root",
+        cacheRoot,
+        "--name",
+        "demo-db-image",
+        "--deployment-root",
+        deploymentRoot,
+        "--data-dir",
+        path.join(deploymentRoot, "data"),
+        "--logs-dir",
+        path.join(deploymentRoot, "data", "logs"),
+        "--certs-dir",
+        path.join(deploymentRoot, "data", "certs"),
+        "--registry",
+        "docker.io/codehausau",
+        "--image-tag",
+        "main",
+        "--db-image",
+        "example/postgis:custom",
+        "--postgres-password",
+        "postgres-pass",
+        "--ca-name",
+        "DemoCA",
+        "--ca-pass",
+        "ca-pass",
+        "--state",
+        "ACT",
+        "--city",
+        "Canberra",
+        "--organization",
+        "CodeHaus",
+        "--organizational-unit",
+        "Ops",
+        "--takserver-cert-pass",
+        "tak-pass",
+        "--admin-cert-name",
+        "admin",
+        "--admin-cert-pass",
+        "admin-pass",
+        "--yes",
+        "--dry-run",
+        "--json"
+      ],
+      io.io,
+      createServices(runner)
+    );
+
+    expect(exitCode).toBe(0);
+    const output = JSON.parse(io.readStdout()) as {
+      compose: {
+        composeFilePath: string;
+        images: { db: string };
+      };
+    };
+
+    expect(output.compose.images.db).toBe("example/postgis:custom");
+    const composeFile = await readFile(output.compose.composeFilePath, "utf8");
+    expect(composeFile).toContain("example/postgis:custom");
   });
 
   it("builds a geographic adsb.fi v3 feed URL when ADS-B geo mode is selected", async () => {
@@ -1273,7 +1348,7 @@ describe("deploy integration", () => {
 
     expect(output.target).toBe("kubernetes");
     expect(output.kubernetes.images.server).toBe("docker.io/codehausau/takserver-full:main");
-    expect(output.kubernetes.images.db).toBe("postgis/postgis:15-3.3");
+    expect(output.kubernetes.images.db).toBe("kartoza/postgis:15-3.4");
     expect(output.kubernetes.namespace).toBe("demo-k8s");
     await access(output.kubernetes.manifestPath);
 
