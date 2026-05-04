@@ -47,6 +47,10 @@ function parseTimeout(value: string): number {
   return parseInteger(value, "timeout", 1);
 }
 
+function parsePort(value: string): number {
+  return parseInteger(value, "port", 1);
+}
+
 function assertNoRawJsonConflict(raw: { raw?: boolean }, json: boolean): void {
   if (raw.raw && json) {
     throw new CliError("`--raw` and `--json` cannot be used together.");
@@ -67,6 +71,18 @@ function addSharedOptions(command: Command): Command {
     .addOption(new Option("--json", "Emit JSON output"))
     .addOption(new Option("--profile <name>", "Use a named TAK profile"))
     .addOption(new Option("--server <url>", "Override the server target for this command"))
+    .addOption(new Option("--api-port <port>", "Override API port for this command").argParser(parsePort))
+    .addOption(new Option("--cot-port <port>", "Override CoT port for this command").argParser(parsePort))
+    .addOption(
+      new Option("--enrollment-port <port>", "Override enrollment port for this command").argParser(
+        parsePort
+      )
+    )
+    .addOption(
+      new Option("--federation-port <port>", "Override federation port for this command").argParser(
+        parsePort
+      )
+    )
     .addOption(new Option("--insecure", "Skip TLS verification for this command"))
     .addOption(new Option("--timeout <ms>", "Timeout in milliseconds").default("5000"))
     .addOption(new Option("--verbose", "Enable verbose output"));
@@ -78,6 +94,10 @@ function buildRuntimeContext(command: Command, options: ReturnType<typeof getGlo
   return loadConfig(options.config, { allowMissing: true }).then((config) => ({
     config,
     profile: resolveProfileTarget(config.config, {
+      apiPortOverride: rawOptions.apiPort as number | undefined,
+      cotPortOverride: rawOptions.cotPort as number | undefined,
+      enrollmentPortOverride: rawOptions.enrollmentPort as number | undefined,
+      federationPortOverride: rawOptions.federationPort as number | undefined,
       insecureSkipVerifyOverride: rawOptions.insecure ? true : undefined,
       profileName: options.profile,
       serverOverride: options.server

@@ -75,6 +75,46 @@ describe("deploy helpers", () => {
     expect(document.services.takserver.volumes).toContain("/tmp/tak/certs:/opt/tak/data/certs");
   });
 
+  it("renders an optional ADS-B gateway service in the TAKCLI-managed compose file", () => {
+    const request: DeployRequest = {
+      adsb: {
+        feedUrl: "https://opendata.adsb.fi/api/v2/mil",
+        source: "mil"
+      },
+      certsDir: "/tmp/tak/certs",
+      dataDir: "/tmp/tak/data",
+      deploymentName: "demo",
+      deploymentRoot: "/tmp/tak/deployments/demo",
+      dryRun: true,
+      flavor: "unhardened",
+      imageTag: "main",
+      logsDir: "/tmp/tak/logs",
+      ref: "main",
+      registry: "docker.io/codehausau",
+      repoUrl: "https://github.com/TAK-Product-Center/Server.git",
+      target: "docker-compose",
+      yes: true
+    };
+
+    const images = createDeployImages(request.registry, request.imageTag);
+    const document = YAML.parse(renderTakCliComposeYaml(images, request)) as {
+      services: {
+        "tak-adsb-gateway": {
+          build: { context: string };
+          depends_on: string[];
+          volumes: string[];
+        };
+      };
+    };
+
+    expect(document.services["tak-adsb-gateway"].build.context).toBe("./ads-b");
+    expect(document.services["tak-adsb-gateway"].depends_on).toContain("takserver");
+    expect(document.services["tak-adsb-gateway"].volumes).toContain("./ads-b/adsbcot.ini:/etc/adsbcot/adsbcot.ini:ro");
+    expect(document.services["tak-adsb-gateway"].volumes).toContain(
+      "/tmp/tak/certs/files:/etc/adsbcot/certs:ro"
+    );
+  });
+
   it("renders TAKCLI-managed Kubernetes manifests with a namespace, secret, and services", () => {
     const request: DeployRequest = {
       certsDir: "/tmp/tak/certs",

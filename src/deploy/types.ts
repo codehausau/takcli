@@ -53,6 +53,16 @@ export interface ComposeImageSet {
   server: string;
 }
 
+export interface DeployAdsbOptions {
+  area?: {
+    distNm: number;
+    lat: number;
+    lon: number;
+  };
+  feedUrl: string;
+  source: "geo" | "mil";
+}
+
 export interface DeployEnvironmentValues {
   adminCertName: string;
   adminCertPass: string;
@@ -74,6 +84,11 @@ export interface DeployBootstrapWebTakUser {
 export interface DeployWizardOptions {
   adminCertName?: string;
   adminCertPass?: string;
+  adsbDistNm?: string;
+  adsbFeedUrl?: string;
+  adsbLat?: string;
+  adsbLon?: string;
+  adsbSource?: "geo" | "mil";
   cacheRoot?: string;
   configPath?: string;
   caName?: string;
@@ -94,15 +109,18 @@ export interface DeployWizardOptions {
   ref?: string;
   registry?: string;
   repoUrl?: string;
+  saveProfiles?: boolean;
   state?: string;
   takserverCertPass?: string;
   target?: DeployTarget;
+  withAdsb?: boolean;
   webtakPassword?: string;
   webtakUsername?: string;
   yes?: boolean;
 }
 
 export interface DeployRequest {
+  adsb?: DeployAdsbOptions;
   certsDir: string;
   cacheRoot?: string;
   dataDir: string;

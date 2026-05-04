@@ -7,6 +7,7 @@ import { loadConfig } from "../../core/config-store.js";
 import { resolveProfileTarget } from "../../core/profile-resolution.js";
 import { loadReplayDataset } from "../../replay/geojson.js";
 import { createReplayRunner, describeReplayTarget, resolveReplayStartIndex } from "../../replay/service.js";
+import { createReplayTelemetryPublisher } from "../../replay/telemetry.js";
 import type { ReplayDatasetSummary, ReplayProgressSnapshot, ReplaySourceOption } from "../../replay/types.js";
 import { color, writeCommandTitle, writeJson, writeSection } from "../output.js";
 import { CliError, getGlobalOptions, type IO } from "../runtime.js";
@@ -268,6 +269,14 @@ export function createReplayCommand(io: IO): Command {
 
           const interactive = !context.options.json && canUseInteractiveControls();
           let lastRendered = "";
+          const telemetry = createReplayTelemetryPublisher({
+            dataset,
+            maxEvents: rawOptions.maxEvents,
+            profile: replayProfile,
+            speed: rawOptions.speed,
+            startFromTime: dataset.trackPoints[startIndex]!.sourceTime
+          });
+          await telemetry.initialize();
           const renderStatus = (snapshot?: ReplayProgressSnapshot) => {
             if (!interactive) {
               return;
@@ -286,7 +295,10 @@ export function createReplayCommand(io: IO): Command {
             cotType: rawOptions.cotType,
             how: rawOptions.how,
             maxEvents: rawOptions.maxEvents,
-            onStateChange: (snapshot) => renderStatus(snapshot),
+            onStateChange: (snapshot) => {
+              void telemetry.onStateChange(snapshot);
+              renderStatus(snapshot);
+            },
             profile: replayProfile,
             speed: rawOptions.speed,
             staleSeconds: rawOptions.staleSeconds,
@@ -308,6 +320,7 @@ export function createReplayCommand(io: IO): Command {
 
           try {
             const result = await runner.run();
+            await telemetry.onRunCompleted(result);
             if (interactive) {
               process.stdout.write("\r\x1b[2K");
             }
@@ -324,6 +337,9 @@ export function createReplayCommand(io: IO): Command {
               `Last source time: ${result.finalTrackPointTime ?? "-"}`,
               `Replay speed: ${result.speed}x`
             ]);
+          } catch (error) {
+            await telemetry.onRunFailed();
+            throw error;
           } finally {
             teardownControls();
             if (interactive) {

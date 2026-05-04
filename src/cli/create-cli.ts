@@ -10,9 +10,11 @@ import { createCompletionCommand, createHiddenCompletionCommand } from "./comple
 import { createCotCommand } from "./commands/cot.js";
 import { createDeployCommand } from "./commands/deploy.js";
 import { createDoctorCommand } from "./commands/doctor.js";
+import { createMapCommand } from "./commands/map.js";
 import { createObserveCommand } from "./commands/observe.js";
 import { createProfileCommand } from "./commands/profile.js";
 import { createReplayCommand } from "./commands/replay.js";
+import { createStartCommand } from "./commands/start.js";
 import { createStatusCommand } from "./commands/status.js";
 import { createUsersCommand } from "./commands/users.js";
 import { CliError, createProcessIo, writeError, writeLine, type IO } from "./runtime.js";
@@ -42,10 +44,12 @@ export function createCli(io: IO = createProcessIo(), services: CliServices = cr
   program.addCommand(createCotCommand(io));
   program.addCommand(createDeployCommand(io, services.deploy));
   program.addCommand(createDoctorCommand(io));
+  program.addCommand(createMapCommand(io));
   program.addCommand(createObserveCommand(io, services.observe));
   program.addCommand(createStatusCommand(io));
   program.addCommand(createProfileCommand(io));
   program.addCommand(createReplayCommand(io));
+  program.addCommand(createStartCommand(io));
   program.addCommand(createUsersCommand(io));
   program.addCommand(createHiddenCompletionCommand(program, io));
   program

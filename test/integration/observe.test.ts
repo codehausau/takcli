@@ -37,6 +37,7 @@ function createTrackedDeployment(
   const workspacePath = path.join(rootDir, `${name}-workspace`);
 
   return {
+    addons: [],
     certsDir: path.join(rootDir, `${name}-data`, "certs"),
     createdAt: "2026-03-20T00:00:00.000Z",
     dataDir: path.join(rootDir, `${name}-data`),

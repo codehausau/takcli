@@ -1,3 +1,5 @@
+import { createPrivateKey } from "node:crypto";
+import { access, chmod, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -13,6 +15,7 @@ import { ensureTakServerClone, getDefaultDeploymentRoot } from "./repo.js";
 import { loadDeploymentState, saveDeploymentState, type TrackedDeployment } from "./state.js";
 import { checkDeployDependencies } from "./system.js";
 import type {
+  DeployAdsbOptions,
   DeployBootstrapWebTakUser,
   DeployEnvironmentValues,
   DeployRequest,
@@ -32,6 +35,9 @@ const WEBTAK_BOOTSTRAP_PASSWORD_ENV = "TAKCLI_WEBTAK_BOOTSTRAP_PASSWORD";
 const WEBTAK_BOOTSTRAP_ATTEMPTS = 5;
 const WEBTAK_BOOTSTRAP_RETRY_DELAY_MS = 2_000;
 const DEPLOY_PROFILE_HOST = "127.0.0.1";
+const DEFAULT_ADSB_FEED_URL = "https://opendata.adsb.fi/api/v2/mil";
+const DEFAULT_ADSB_AREA_DISTANCE_NM = 25;
+const MAX_ADSB_AREA_DISTANCE_NM = 250;
 
 function defaultDeploymentName(): string {
   return `tak-${new Date().toISOString().slice(0, 10)}`;
@@ -320,6 +326,147 @@ async function resolveBootstrapWebTakUser(
   };
 }
 
+async function resolveAdsbOptions(
+  io: IO,
+  options: DeployWizardOptions,
+  prompt: DeployServices["prompt"],
+  target: DeployTarget
+): Promise<DeployAdsbOptions | undefined> {
+  const adsbOptionSupplied = Boolean(
+    options.withAdsb || options.adsbFeedUrl || options.adsbSource || options.adsbLat || options.adsbLon || options.adsbDistNm
+  );
+
+  if (target !== "docker-compose") {
+    if (!adsbOptionSupplied) {
+      return undefined;
+    }
+    throw new CliError("The ADS-B gateway add-on is currently only supported for docker-compose deployments.");
+  }
+
+  let shouldEnable = adsbOptionSupplied;
+  if (!shouldEnable) {
+    if (options.yes) {
+      return undefined;
+    }
+
+    shouldEnable = await prompt.confirm({
+      defaultValue: false,
+      message: "Enable the ADS-B gateway sidecar?"
+    });
+  }
+
+  if (!shouldEnable) {
+    return undefined;
+  }
+
+  const source =
+    options.adsbSource ??
+    (options.adsbFeedUrl
+      ? "mil"
+      : ((await prompt.select({
+          choices: [
+            {
+              description: "Use the adsb.fi public military aircraft endpoint.",
+              value: "mil"
+            },
+            {
+              description: "Use the adsb.fi public geographic v3 lat/lon/dist endpoint.",
+              value: "geo"
+            }
+          ],
+          defaultValue: "mil",
+          message: "Choose an ADS-B source profile"
+        })) as DeployAdsbOptions["source"]));
+
+  if (options.adsbFeedUrl) {
+    return {
+      feedUrl: options.adsbFeedUrl,
+      source
+    };
+  }
+
+  if (source === "mil") {
+    return {
+      feedUrl: DEFAULT_ADSB_FEED_URL,
+      source
+    };
+  }
+
+  const parseNumber = (value: string, label: string): number => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) {
+      throw new CliError(`${label} must be a valid number.`);
+    }
+    return parsed;
+  };
+
+  const lat = parseNumber(
+    await resolveValidatedPromptedValue({
+      io,
+      message: "ADS-B latitude",
+      prompt,
+      supplied: options.adsbLat,
+      validate: (value) => {
+        if (!value.trim()) {
+          throw new CliError("ADS-B latitude is required when --adsb-source geo is selected.");
+        }
+        const parsed = parseNumber(value, "ADS-B latitude");
+        if (parsed < -90 || parsed > 90) {
+          throw new CliError("ADS-B latitude must be between -90 and 90.");
+        }
+      }
+    }),
+    "ADS-B latitude"
+  );
+  const lon = parseNumber(
+    await resolveValidatedPromptedValue({
+      io,
+      message: "ADS-B longitude",
+      prompt,
+      supplied: options.adsbLon,
+      validate: (value) => {
+        if (!value.trim()) {
+          throw new CliError("ADS-B longitude is required when --adsb-source geo is selected.");
+        }
+        const parsed = parseNumber(value, "ADS-B longitude");
+        if (parsed < -180 || parsed > 180) {
+          throw new CliError("ADS-B longitude must be between -180 and 180.");
+        }
+      }
+    }),
+    "ADS-B longitude"
+  );
+  const distNm = parseNumber(
+    await resolveValidatedPromptedValue({
+      defaultValue: String(DEFAULT_ADSB_AREA_DISTANCE_NM),
+      io,
+      message: "ADS-B distance",
+      prompt,
+      supplied: options.adsbDistNm,
+      validate: (value) => {
+        if (!value.trim()) {
+          throw new CliError("ADS-B distance is required when --adsb-source geo is selected.");
+        }
+        const parsed = parseNumber(value, "ADS-B distance");
+        if (parsed <= 0 || parsed > MAX_ADSB_AREA_DISTANCE_NM) {
+          throw new CliError(`ADS-B distance must be greater than 0 and no more than ${MAX_ADSB_AREA_DISTANCE_NM} NM.`);
+        }
+      }
+    }),
+    "ADS-B distance"
+  );
+
+  return {
+    area: {
+      distNm,
+      lat,
+      lon
+    },
+    feedUrl: `https://opendata.adsb.fi/api/v3/lat/${lat}/lon/${lon}/dist/${distNm}`,
+    source
+  };
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
@@ -386,14 +533,18 @@ async function maybeRegisterComposeProfiles(
   envValues: DeployEnvironmentValues,
   request: DeployRequest
 ): Promise<string[]> {
-  if (request.yes) {
+  const forceSaveProfiles = Boolean(options.saveProfiles);
+
+  if (request.yes && !forceSaveProfiles) {
     return [];
   }
 
-  const shouldAddProfiles = await prompt.confirm({
-    defaultValue: true,
-    message: "Add this deployment to TAKCLI profiles?"
-  });
+  const shouldAddProfiles = forceSaveProfiles
+    ? true
+    : await prompt.confirm({
+        defaultValue: true,
+        message: "Add this deployment to TAKCLI profiles?"
+      });
 
   if (!shouldAddProfiles) {
     return [];
@@ -421,7 +572,11 @@ async function maybeRegisterComposeProfiles(
 
   const adminProfileName = `${request.deploymentName}-admin`;
   const adminCertFile = path.join(request.certsDir, "files", `${envValues.adminCertName}.pem`);
-  const adminKeyFile = path.join(request.certsDir, "files", `${envValues.adminCertName}.key`);
+  const adminKeyFile = await ensureComposeAdminProfileKey({
+    adminCertName: envValues.adminCertName,
+    certsDir: request.certsDir,
+    passphrase: envValues.adminCertPass
+  });
   const adminCaFile = path.join(request.certsDir, "files", "root-ca.pem");
   nextProfiles[adminProfileName] = profileSchema.parse({
     description: `Local compose admin profile for ${request.deploymentName}`,
@@ -441,10 +596,12 @@ async function maybeRegisterComposeProfiles(
   });
   savedNames.push(adminProfileName);
 
-  const setCurrent = await prompt.confirm({
-    defaultValue: true,
-    message: `Set ${defaultProfileName} as the current TAKCLI profile?`
-  });
+  const setCurrent = forceSaveProfiles
+    ? true
+    : await prompt.confirm({
+        defaultValue: true,
+        message: `Set ${defaultProfileName} as the current TAKCLI profile?`
+      });
 
   const nextConfig = configSchema.parse({
     ...loaded.config,
@@ -458,6 +615,52 @@ async function maybeRegisterComposeProfiles(
   );
 
   return savedNames;
+}
+
+async function ensureComposeAdminProfileKey(options: {
+  adminCertName: string;
+  certsDir: string;
+  passphrase: string;
+}): Promise<string> {
+  const unencryptedKeyFile = path.join(options.certsDir, "files", `${options.adminCertName}.unencrypted.key`);
+  const encryptedKeyFile = path.join(options.certsDir, "files", `${options.adminCertName}.key`);
+  const transientErrorCodes = new Set(["EACCES", "ENOENT", "EPERM"]);
+
+  for (let attempt = 1; attempt <= 10; attempt += 1) {
+    try {
+      await access(unencryptedKeyFile);
+      return unencryptedKeyFile;
+    } catch {
+      // Convert the encrypted key below.
+    }
+
+    try {
+      const encryptedKey = await readFile(encryptedKeyFile, "utf8");
+      const privateKey = createPrivateKey({
+        format: "pem",
+        key: encryptedKey,
+        passphrase: options.passphrase
+      });
+      const unencryptedKey = privateKey.export({
+        format: "pem",
+        type: "pkcs8"
+      });
+
+      await writeFile(unencryptedKeyFile, unencryptedKey, { mode: 0o600 });
+      await chmod(unencryptedKeyFile, 0o600);
+
+      return unencryptedKeyFile;
+    } catch (error) {
+      const code = error instanceof Error && "code" in error ? String(error.code) : undefined;
+      if (attempt < 10 && code && transientErrorCodes.has(code)) {
+        await delay(500);
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  return unencryptedKeyFile;
 }
 
 async function saveTrackedDeployment(
@@ -497,6 +700,11 @@ function buildPlanLines(request: DeployRequest, gitCommit: string): string[] {
     : request.target === "docker-compose"
       ? "Execution: docker compose up -d"
       : "Execution: kubectl apply -f kubernetes.yaml (experimental)";
+  const adsbLine = request.adsb
+    ? request.adsb.source === "geo" && request.adsb.area
+      ? `ADS-B gateway: enabled (geo ${request.adsb.area.lat}, ${request.adsb.area.lon} within ${request.adsb.area.distNm} NM)`
+      : "ADS-B gateway: enabled (mil)"
+    : "ADS-B gateway: skipped";
 
   return [
     `Target: ${request.target}`,
@@ -510,9 +718,11 @@ function buildPlanLines(request: DeployRequest, gitCommit: string): string[] {
     `Certs dir: ${request.certsDir}`,
     `Server image: ${images.server}`,
     `Database image: ${images.db}`,
+    adsbLine,
+    request.adsb ? `ADS-B feed URL: ${request.adsb.feedUrl}` : undefined,
     request.webtakUser ? `Initial WebTAK user: ${request.webtakUser.username}` : "Initial WebTAK user: skipped",
     executionLine
-  ];
+  ].filter((line): line is string => Boolean(line));
 }
 
 export async function runDeployWizard(
@@ -535,6 +745,7 @@ export async function runDeployWizard(
     writeSection(io, "Missing dependencies", lines);
     throw new CliError("Required deploy dependencies are missing.");
   }
+  const adsb = await resolveAdsbOptions(io, options, services.prompt, target);
 
   const ref = await resolvePromptedValue(options.ref, services.prompt, "TAK Server git ref", "main");
   const deploymentName = await resolvePromptedValue(
@@ -598,6 +809,7 @@ export async function runDeployWizard(
   }
 
   const request: DeployRequest = {
+    adsb,
     certsDir,
     cacheRoot: options.cacheRoot ? normalizePath(options.cacheRoot) : undefined,
     dataDir,
@@ -668,6 +880,9 @@ export async function runDeployWizard(
       `Rendered ${compose.composeFilePath}`,
       `Rendered ${compose.envFilePath}`
     );
+    if (request.adsb) {
+      steps.push(`Rendered ADS-B gateway assets in ${path.join(request.deploymentRoot, "ads-b")}`);
+    }
 
     if (!request.dryRun) {
       const upResult = await runWithDeploymentFeedback(
@@ -704,6 +919,7 @@ export async function runDeployWizard(
       }
 
       result.statePath = await saveTrackedDeployment(options.configPath, request.deploymentName, {
+        addons: request.adsb ? ["ads-b"] : [],
         certsDir: request.certsDir,
         compose: {
           composeFilePath: compose.composeFilePath,
@@ -759,6 +975,7 @@ export async function runDeployWizard(
       steps.push(`Applied Kubernetes manifests from ${kubernetes.manifestPath}`);
 
       result.statePath = await saveTrackedDeployment(options.configPath, request.deploymentName, {
+        addons: [],
         certsDir: request.certsDir,
         createdAt: new Date().toISOString(),
         dataDir: request.dataDir,
@@ -793,6 +1010,7 @@ export async function runDeployWizard(
       `Workspace: ${result.compose.workspacePath}`,
       `Compose file: ${result.compose.composeFilePath}`,
       `Images: ${result.compose.images.server} and ${result.compose.images.db}`,
+      request.adsb ? "ADS-B gateway: enabled" : "ADS-B gateway: disabled",
       result.statePath ? `State file: ${result.statePath}` : "State file: not tracked",
       request.dryRun ? "Docker Compose was not started." : "Docker Compose stack started."
     ]);

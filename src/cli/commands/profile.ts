@@ -109,6 +109,7 @@ export function createProfileCommand(io: IO): Command {
           `TLS CA file: ${profile.tls.caFile ?? "-"}`,
           `TLS client cert: ${profile.tls.certFile ?? "-"}`,
           `TLS client key: ${profile.tls.keyFile ?? "-"}`,
+          `TLS client key passphrase: ${profile.tls.keyPassphrase ? "(set)" : "-"}`,
           `TLS insecure skip verify: ${profile.tls.insecureSkipVerify ? "true" : "false"}`,
           `Auth username: ${profile.auth.username ?? "-"}`,
           `Auth password: ${profile.auth.password ? "(set)" : "-"}`,
@@ -133,6 +134,7 @@ export function createProfileCommand(io: IO): Command {
       .option("--ca-file <path>", "Path to the trusted CA bundle")
       .option("--cert-file <path>", "Path to the client certificate (PEM)")
       .option("--key-file <path>", "Path to the client private key (PEM)")
+      .option("--key-passphrase <text>", "Passphrase for the client private key")
       .option("--auth-user <username>", "Store an admin username for HTTP basic auth")
       .option("--auth-password <password>", "Store an admin password for HTTP basic auth")
       .option("--auth-token <token>", "Store an admin bearer token")
@@ -148,6 +150,10 @@ export function createProfileCommand(io: IO): Command {
         const hasKey = Boolean(raw.keyFile);
         if (hasCert !== hasKey) {
           throw new CliError("Both `--cert-file` and `--key-file` must be provided together.");
+        }
+
+        if (raw.keyPassphrase && !hasKey) {
+          throw new CliError("`--key-passphrase` requires `--key-file`.");
         }
 
         const hasAuthUser = Boolean(raw.authUser);
@@ -174,7 +180,8 @@ export function createProfileCommand(io: IO): Command {
             caFile: raw.caFile ? path.resolve(raw.caFile as string) : undefined,
             certFile: raw.certFile ? path.resolve(raw.certFile as string) : undefined,
             insecureSkipVerify: Boolean(raw.insecure),
-            keyFile: raw.keyFile ? path.resolve(raw.keyFile as string) : undefined
+            keyFile: raw.keyFile ? path.resolve(raw.keyFile as string) : undefined,
+            keyPassphrase: raw.keyPassphrase
           }
         });
 

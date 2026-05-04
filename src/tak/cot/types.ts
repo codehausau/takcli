@@ -42,6 +42,7 @@ export interface CotTargetRecord {
   error?: string;
   lat?: number;
   lon?: number;
+  remarks?: string;
   time?: string;
   type?: string;
   uid: string;

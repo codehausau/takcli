@@ -1,10 +1,10 @@
 import dns from "node:dns/promises";
-import { readFileSync } from "node:fs";
 import http from "node:http";
 import https from "node:https";
 import net from "node:net";
 import tls from "node:tls";
 
+import { buildTlsClientOptions, describeTlsClientError } from "./tls.js";
 import type { DnsProbeResult, HttpProbeResult, TcpProbeResult, TlsProbeResult } from "./types.js";
 
 function pickCertificateName(value: string | string[] | undefined): string | undefined {
@@ -94,6 +94,7 @@ export async function probeTls(
     certFile?: string;
     insecureSkipVerify?: boolean;
     keyFile?: string;
+    keyPassphrase?: string;
   } = {}
 ): Promise<TlsProbeResult> {
   const start = Date.now();
@@ -102,12 +103,9 @@ export async function probeTls(
     const certificate = await withTimeout("TLS handshake", timeoutMs, () => {
       return new Promise<tls.PeerCertificate>((resolve, reject) => {
         const socket = tls.connect({
-          ca: options.caFile ? readFileSync(options.caFile) : undefined,
-          cert: options.certFile ? readFileSync(options.certFile) : undefined,
+          ...buildTlsClientOptions(host, options),
           host,
-          key: options.keyFile ? readFileSync(options.keyFile) : undefined,
           port,
-          rejectUnauthorized: !(options.insecureSkipVerify ?? false),
           servername: net.isIP(host) ? undefined : host
         });
 
@@ -146,6 +144,7 @@ export async function probeHttp(
     certFile?: string;
     insecureSkipVerify?: boolean;
     keyFile?: string;
+    keyPassphrase?: string;
     method?: "GET" | "HEAD";
   } = {}
 ): Promise<HttpProbeResult> {
@@ -156,25 +155,28 @@ export async function probeHttp(
       return new Promise<{ statusCode?: number; statusMessage?: string }>((resolve, reject) => {
         const isHttps = url.protocol === "https:";
         const requestFn = isHttps ? https.request : http.request;
-        const request = requestFn(
-          {
-            ca: options.caFile ? readFileSync(options.caFile) : undefined,
-            cert: options.certFile ? readFileSync(options.certFile) : undefined,
-            host: url.hostname,
-            key: options.keyFile ? readFileSync(options.keyFile) : undefined,
-            method: options.method ?? "HEAD",
-            path: `${url.pathname || "/"}${url.search}`,
-            port: url.port ? Number(url.port) : undefined,
-            rejectUnauthorized: isHttps ? !(options.insecureSkipVerify ?? false) : undefined
-          },
-          (response) => {
-            response.resume();
-            resolve({
-              statusCode: response.statusCode,
-              statusMessage: response.statusMessage
-            });
-          }
-        );
+        let request;
+        try {
+          request = requestFn(
+            {
+              ...(isHttps ? buildTlsClientOptions(url.hostname, options) : {}),
+              host: url.hostname,
+              method: options.method ?? "HEAD",
+              path: `${url.pathname || "/"}${url.search}`,
+              port: url.port ? Number(url.port) : undefined
+            },
+            (response) => {
+              response.resume();
+              resolve({
+                statusCode: response.statusCode,
+                statusMessage: response.statusMessage
+              });
+            }
+          );
+        } catch (error) {
+          reject(describeTlsClientError(error));
+          return;
+        }
 
         request.once("error", reject);
         request.end();

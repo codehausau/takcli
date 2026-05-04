@@ -70,6 +70,11 @@ async function createConfig(cotPort: number): Promise<string> {
   return configPath;
 }
 
+async function createAdHocConfigPath(): Promise<string> {
+  const baseDir = await mkdtemp(path.join(os.tmpdir(), "takcli-cot-adhoc-"));
+  return path.join(baseDir, "config.yaml");
+}
+
 const servers: Array<{ close: () => void }> = [];
 
 afterEach(() => {
@@ -108,11 +113,14 @@ describe("TAKCLI CoT integration", () => {
       throw new Error("Expected an IP address.");
     }
 
+    const configPath = await createAdHocConfigPath();
     const io = createMemoryIo();
     const exitCode = await runCli(
       [
         "cot",
         "query",
+        "--config",
+        configPath,
         "--uid",
         "alpha",
         "--server",
@@ -127,6 +135,90 @@ describe("TAKCLI CoT integration", () => {
     const output = JSON.parse(io.readStdout()) as { event: { callsign?: string; uid: string } };
     expect(output.event.uid).toBe("alpha");
     expect(output.event.callsign).toBe("Eagle 1");
+  });
+
+  it("uses the enrollment HTTPS port for CoT lookups when the primary API port denies them", async () => {
+    const certs = createCerts();
+    const apiServer = https.createServer(
+      {
+        cert: certs.cert,
+        key: certs.private
+      },
+      (_req, res) => {
+        res.writeHead(403, { "content-type": "application/json" });
+        res.end(JSON.stringify({ message: "Use the secure admin port" }));
+      }
+    );
+    servers.push(apiServer);
+    await new Promise<void>((resolve) => apiServer.listen(0, "127.0.0.1", () => resolve()));
+    const apiAddress = apiServer.address();
+    if (!apiAddress || typeof apiAddress === "string") {
+      throw new Error("Expected an API port.");
+    }
+
+    const enrollmentServer = https.createServer(
+      {
+        cert: certs.cert,
+        key: certs.private
+      },
+      (req, res) => {
+        const requestUrl = new URL(req.url ?? "/", "https://127.0.0.1");
+
+        if (requestUrl.pathname === "/Marti/api/uidsearch") {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ data: [{ callSign: "Eagle 1", uid: "alpha" }] }));
+          return;
+        }
+
+        if (requestUrl.pathname === "/Marti/GetCotData" && requestUrl.searchParams.get("uid") === "alpha") {
+          res.writeHead(200, { "content-type": "application/xml" });
+          res.end(
+            '<event version="2.0" uid="alpha" type="a-f-G-U-C" time="2026-03-17T10:00:00.000Z" start="2026-03-17T10:00:00.000Z" stale="2026-03-17T10:05:00.000Z" how="m-g"><point lat="-35.3" lon="149.1" hae="450" ce="12" le="22"/><detail><contact callsign="Eagle 1"/></detail></event>'
+          );
+          return;
+        }
+
+        res.writeHead(404);
+        res.end();
+      }
+    );
+    servers.push(enrollmentServer);
+    await new Promise<void>((resolve) => enrollmentServer.listen(0, "127.0.0.1", () => resolve()));
+    const enrollmentAddress = enrollmentServer.address();
+    if (!enrollmentAddress || typeof enrollmentAddress === "string") {
+      throw new Error("Expected an enrollment port.");
+    }
+
+    const configPath = await createAdHocConfigPath();
+    const io = createMemoryIo();
+    const exitCode = await runCli(
+      [
+        "cot",
+        "targets",
+        "--config",
+        configPath,
+        "--server",
+        `https://127.0.0.1:${apiAddress.port}`,
+        "--enrollment-port",
+        String(enrollmentAddress.port),
+        "--insecure",
+        "--limit",
+        "1",
+        "--json"
+      ],
+      io.io
+    );
+
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(io.readStdout())).toMatchObject({
+      targets: [
+        {
+          callsign: "Eagle 1",
+          type: "a-f-G-U-C",
+          uid: "alpha"
+        }
+      ]
+    });
   });
 
   it("retries UID queries when the first lookup times out", async () => {
@@ -169,11 +261,14 @@ describe("TAKCLI CoT integration", () => {
       throw new Error("Expected an IP address.");
     }
 
+    const configPath = await createAdHocConfigPath();
     const io = createMemoryIo();
     const exitCode = await runCli(
       [
         "cot",
         "query",
+        "--config",
+        configPath,
         "--uid",
         "alpha",
         "--server",
@@ -234,11 +329,14 @@ describe("TAKCLI CoT integration", () => {
       throw new Error("Expected an IP address.");
     }
 
+    const configPath = await createAdHocConfigPath();
     const io = createMemoryIo();
     const exitCode = await runCli(
       [
         "cot",
         "targets",
+        "--config",
+        configPath,
         "--server",
         `https://127.0.0.1:${address.port}`,
         "--insecure",
@@ -384,11 +482,14 @@ describe("TAKCLI CoT integration", () => {
       throw new Error("Expected an IP address.");
     }
 
+    const configPath = await createAdHocConfigPath();
     const io = createMemoryIo();
     const exitCode = await runCli(
       [
         "cot",
         "query",
+        "--config",
+        configPath,
         "--uid",
         "alpha",
         "--server",
@@ -421,11 +522,14 @@ describe("TAKCLI CoT integration", () => {
       throw new Error("Expected an IP address.");
     }
 
+    const configPath = await createAdHocConfigPath();
     const io = createMemoryIo();
     const exitCode = await runCli(
       [
         "cot",
         "query",
+        "--config",
+        configPath,
         "--uid",
         "alpha",
         "--server",

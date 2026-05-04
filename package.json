@@ -20,6 +20,11 @@
     "node": ">=22.0.0"
   },
   "packageManager": "pnpm@10.32.1",
+  "pnpm": {
+    "overrides": {
+      "flatted": "^3.4.2"
+    }
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "clean": "rimraf coverage dist *.tgz",
@@ -32,6 +37,8 @@
   },
   "dependencies": {
     "commander": "^14.0.3",
+    "leaflet": "^1.9.4",
+    "milsymbol": "^3.0.4",
     "yaml": "^2.8.1",
     "zod": "^4.1.8"
   },

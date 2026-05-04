@@ -1,26 +1,18 @@
-import { readFileSync } from "node:fs";
 import net from "node:net";
 import tls from "node:tls";
 import { setTimeout as delay } from "node:timers/promises";
 
 import type { ResolvedProfile } from "../../core/profile-resolution.js";
+import { buildTlsClientOptions, describeTlsClientError } from "../tls.js";
 
 export interface CotEventWriter {
   close: () => Promise<void>;
   send: (xml: string) => Promise<number>;
 }
 
-function ensureValidTlsPair(profile: ResolvedProfile): void {
-  const hasCert = Boolean(profile.tls.certFile);
-  const hasKey = Boolean(profile.tls.keyFile);
-
-  if (hasCert !== hasKey) {
-    throw new Error("Both tls.certFile and tls.keyFile must be configured together.");
-  }
-}
-
 function describeStreamError(error: unknown): Error {
-  const message = error instanceof Error ? error.message : String(error);
+  const clientError = describeTlsClientError(error);
+  const message = clientError.message;
   if (
     /certificate required|alert certificate required|bad certificate|handshake failure|unknown ca/i.test(
       message
@@ -31,20 +23,17 @@ function describeStreamError(error: unknown): Error {
     );
   }
 
-  return error instanceof Error ? error : new Error(message);
+  return clientError;
 }
 
 function connectCotSocket(profile: ResolvedProfile, timeoutMs: number): Promise<tls.TLSSocket> {
-  ensureValidTlsPair(profile);
+  const tlsOptions = buildTlsClientOptions(profile.host, profile.tls);
 
   return new Promise<tls.TLSSocket>((resolve, reject) => {
     const socket = tls.connect({
-      ca: profile.tls.caFile ? readFileSync(profile.tls.caFile) : undefined,
-      cert: profile.tls.certFile ? readFileSync(profile.tls.certFile) : undefined,
+      ...tlsOptions,
       host: profile.host,
-      key: profile.tls.keyFile ? readFileSync(profile.tls.keyFile) : undefined,
       port: profile.ports.cot,
-      rejectUnauthorized: !profile.tls.insecureSkipVerify,
       servername: net.isIP(profile.host) ? undefined : profile.host
     });
 

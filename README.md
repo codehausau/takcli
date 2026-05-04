@@ -46,6 +46,9 @@ takcli status
 takcli observe logs list --deployment tak-demo
 takcli cot query --uid my-uid
 takcli cot targets
+takcli map --open
+takcli start map
+takcli start replay ./data/adelaide-100km-march-2026.geojson
 takcli users list
 takcli deploy
 takcli doctor --json
@@ -81,13 +84,23 @@ profiles:
   local:
     server: https://127.0.0.1:8446
     tls:
+      certFile: /path/to/admin.pem
       insecureSkipVerify: true
+      keyFile: /path/to/admin.key
+      keyPassphrase: change-me
     ports:
       api: 8446
       enrollment: 8443
       federation: 8444
       cot: 8089
 ```
+
+Port meanings:
+- `ports.api`: primary HTTPS/WebTAK surface, `8446` in the local compose deployment
+- `ports.enrollment`: secure admin/cert-management HTTPS surface, `8443` in the local compose deployment
+- `ports.cot`: live CoT TLS stream, `8089` in the local compose deployment
+
+`takcli` uses `ports.enrollment` for admin-style HTTPS routes such as CoT history lookups and file-user management, even when the profile `server` points at `8446`.
 
 ## Commands
 
@@ -102,6 +115,9 @@ profiles:
 - `takcli cot inject`
 - `takcli cot follow`
 - `takcli replay file`
+- `takcli map`
+- `takcli start map`
+- `takcli start replay`
 - `takcli deploy`
 - `takcli profile list`
 - `takcli profile add`
@@ -155,6 +171,82 @@ The best near-term sequence is probably:
 4. Kubernetes deploy support
 5. deeper observe summaries and metrics
 
+## Map console
+
+`takcli map` launches a local browser UI with:
+- a live Leaflet map
+- TAK status checks and target refresh controls
+- CoT injection from the control panel
+- optional live CoT streaming overlays
+- optional replay dataset overlays
+
+Product decision:
+- primary replay workflow: `takcli start map` + `takcli start replay`
+- secondary replay workflow: `takcli map --replay-file ...` for local inspection, demos, and side-by-side overlay work
+
+Quick examples:
+
+```bash
+takcli map --open
+takcli map --profile local --port 3000
+takcli map --replay-file ./data/adelaide-100km-march-2026.geojson --open
+takcli map --logo-label "Acme Air Ops"
+takcli map --mode web --host 0.0.0.0 --port 3000
+```
+
+In headless shells, remote containers, or Codespaces, open the printed `http://...` URL manually instead of relying on browser auto-launch.
+
+### Web mode
+
+`takcli map --mode web` keeps the embedded server model, but binds it for remote/browser access instead of local desktop UX.
+
+Use it when:
+- you are running in Docker or Codespaces
+- you want to reverse-proxy the UI
+- you are demoing the UI from another machine on the network
+
+Example:
+
+```bash
+takcli map --mode web --host 0.0.0.0 --port 3000
+```
+
+And from Docker:
+
+```bash
+docker run --rm -p 3000:3000 ghcr.io/codehausau/takcli:latest \
+  map --mode web --host 0.0.0.0 --port 3000
+```
+
+`takcli start map` also supports `--mode web`. In web mode, `start map` disables browser auto-open by default and prints the UI URL for manual use.
+
+## Start workflows
+
+For the operator workflow where replay is injected into TAK and the map follows live CoT back from TAK:
+
+```bash
+takcli start map
+takcli start replay ./data/adelaide-100km-march-2026.geojson
+```
+
+If you are in a headless environment, use:
+
+```bash
+takcli start map --no-open
+```
+
+`takcli start map`:
+- launches the local map UI
+- automatically starts following live CoT from TAK
+- draws live session track lines per UID as updates arrive
+- is the primary map mode once replay is being injected into TAK
+
+`takcli start replay`:
+- injects replay CoT into the TAK CoT stream
+- reuses the same replay engine as `takcli replay file`
+- is intended to be run while `takcli start map` is already following the server
+- is the preferred replay path when you want the UI to reflect TAK-fed CoT instead of local-only playback
+
 ## Deploy workflows
 
 `takcli deploy` is a compose-first wizard that:
@@ -176,8 +268,8 @@ takcli deploy \
   --target docker-compose \
   --ref main \
   --name tak-demo \
-  --registry docker.io/codehausau \
-  --image-tag main
+  --registry codehausau \
+  --image-tag latest
 ```
 
 For non-interactive use, you can provide the required deployment values up front:
@@ -191,8 +283,8 @@ takcli deploy \
   --data-dir ~/.takcli/deployments/tak-demo/data \
   --logs-dir ~/.takcli/deployments/tak-demo/data/logs \
   --certs-dir ~/.takcli/deployments/tak-demo/data/certs \
-  --registry docker.io/codehausau \
-  --image-tag main \
+  --registry codehausau \
+  --image-tag latest \
   --postgres-password change-me \
   --ca-name tak-demo-CA \
   --ca-pass change-me \
@@ -203,10 +295,39 @@ takcli deploy \
   --takserver-cert-pass change-me \
   --admin-cert-name admin \
   --admin-cert-pass change-me \
+  --save-profiles \
   --yes
 ```
 
+Add `--save-profiles` when you want a non-interactive deploy to register the generated local TAK profiles automatically. This creates both `<deployment-name>` and `<deployment-name>-admin` and sets the default profile current.
+
+Optional ADS-B sidecar examples:
+
+```bash
+takcli deploy \
+  --target docker-compose \
+  --name tak-demo \
+  --with-adsb \
+  --adsb-source mil
+
+takcli deploy \
+  --target docker-compose \
+  --name tak-demo \
+  --with-adsb \
+  --adsb-source geo \
+  --adsb-lat 60.3179 \
+  --adsb-lon 24.9496 \
+  --adsb-dist-nm 25
+```
+
+ADS-B acceptable use note:
+- `takcli`'s generated ADS-B config links to the adsb.fi open data terms at https://github.com/adsbfi/opendata/blob/main/README.md
+- The public adsb.fi endpoints are intended for personal, non-commercial use, require attribution to adsb.fi with a link to their home page, and are rate limited to 1 request per second.
+- For new geographic integrations, prefer the `v3 /lat/.../lon/.../dist/...` endpoint rather than the deprecated `v2` geographic endpoint.
+
 ## CoT workflows
+
+`takcli cot query` and `takcli cot targets` resolve their HTTPS lookups through `ports.enrollment` by default. In the local compose deployment that is `8443`, while `ports.api` remains `8446` for the main WebTAK surface.
 
 Query the latest CoT event for a UID:
 
@@ -268,7 +389,7 @@ takcli replay file ../data/adelaide-100km-march-2026.geojson --describe
 
 ## User workflows
 
-The TAK file-user-management endpoints are usually exposed on the secure web/admin port. On the local compose deployment in this workspace, that is `8443`, so either set your profile server to `https://127.0.0.1:8443` or override `--api-port 8443` for `users` commands.
+The TAK file-user-management endpoints are usually exposed on the secure web/admin port. `takcli users` uses `ports.enrollment` for those routes, which is `8443` on the local compose deployment in this workspace.
 
 Example profile for an admin client certificate:
 
@@ -278,9 +399,12 @@ takcli profile add local-admin \
   --api-port 8443 \
   --cert-file /path/to/admin.pem \
   --key-file /path/to/admin.key \
+  --key-passphrase change-me \
   --insecure \
   --set-current
 ```
+
+If your TAK client key is already unencrypted, omit `--key-passphrase`.
 
 Example user-management flows:
 
@@ -352,6 +476,7 @@ There is a helper script for building release-tagged unhardened images from an u
 ./scripts/build-unhardened-takserver-images.sh \
   --tak-server-repo /path/to/tak-server \
   --tag 5.2-RELEASE-16 \
+  --platforms linux/amd64,linux/arm64 \
   --image-prefix docker.io/codehausau
 ```
 

@@ -57,6 +57,8 @@ describe("profile resolution", () => {
 
     expect(profile.server).toBe("https://127.0.0.1:9443");
     expect(profile.ports.api).toBe(9443);
+    expect(profile.ports.enrollment).toBe(9443);
+    expect(profile.ports.federation).toBe(9443);
     expect(profile.tls.insecureSkipVerify).toBe(true);
   });
 
@@ -117,5 +119,30 @@ describe("profile resolution", () => {
       enrollment: 18443,
       federation: 18444
     });
+  });
+
+  it("preserves the TLS client key passphrase from a saved profile", () => {
+    const profile = resolveProfileTarget(
+      {
+        currentProfile: "local",
+        profiles: {
+          local: {
+            auth: {},
+            ports: {},
+            server: "https://tak.example.internal:8446",
+            tls: {
+              certFile: "/tmp/admin.pem",
+              insecureSkipVerify: true,
+              keyFile: "/tmp/admin.key",
+              keyPassphrase: "change-me"
+            }
+          }
+        },
+        schemaVersion: 1
+      },
+      {}
+    );
+
+    expect(profile.tls.keyPassphrase).toBe("change-me");
   });
 });

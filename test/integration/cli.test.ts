@@ -1,7 +1,9 @@
+import { createPrivateKey } from "node:crypto";
 import https from "node:https";
 import os from "node:os";
 import path from "node:path";
 import { chmod, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import type { TLSSocket } from "node:tls";
 
 import selfsigned from "selfsigned";
 import { afterEach, describe, expect, it } from "vitest";
@@ -148,6 +150,107 @@ describe("TAKCLI integration", () => {
     expect(report.summary.failed).toBe(0);
   });
 
+  it("uses a saved key passphrase for HTTPS status checks", async () => {
+    const serverCerts = selfsigned.generate(
+      [
+        {
+          name: "commonName",
+          value: "127.0.0.1"
+        }
+      ],
+      {
+        days: 365,
+        keySize: 2048
+      }
+    );
+    const clientCerts = selfsigned.generate(
+      [
+        {
+          name: "commonName",
+          value: "tak-client"
+        }
+      ],
+      {
+        days: 365,
+        keySize: 2048
+      }
+    );
+    const clientPassphrase = "change-me";
+    const encryptedClientKey = createPrivateKey(clientCerts.private).export({
+      cipher: "aes-256-cbc",
+      format: "pem",
+      passphrase: clientPassphrase,
+      type: "pkcs8"
+    });
+    const server = https.createServer(
+      {
+        cert: serverCerts.cert,
+        key: serverCerts.private,
+        rejectUnauthorized: false,
+        requestCert: true
+      },
+      (req, res) => {
+        const subject = (req.socket as TLSSocket).getPeerCertificate().subject?.CN;
+        res.writeHead(subject === "tak-client" ? 200 : 401);
+        res.end();
+      }
+    );
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Expected a bound address.");
+    }
+
+    const baseDir = await mkdtemp(path.join(os.tmpdir(), "takcli-cli-passphrase-"));
+    const configPath = path.join(baseDir, "config.yaml");
+    const clientCertPath = path.join(baseDir, "client.pem");
+    const clientKeyPath = path.join(baseDir, "client.key");
+    await writeFile(clientCertPath, clientCerts.cert, "utf8");
+    await writeFile(clientKeyPath, encryptedClientKey);
+
+    const add = createMemoryIo();
+    let exitCode = await runCli(
+      [
+        "profile",
+        "add",
+        "local",
+        "--server",
+        `https://127.0.0.1:${address.port}`,
+        "--insecure",
+        "--api-port",
+        String(address.port),
+        "--enrollment-port",
+        String(address.port),
+        "--federation-port",
+        String(address.port),
+        "--cot-port",
+        String(address.port),
+        "--cert-file",
+        clientCertPath,
+        "--key-file",
+        clientKeyPath,
+        "--key-passphrase",
+        clientPassphrase,
+        "--set-current",
+        "--config",
+        configPath
+      ],
+      add.io
+    );
+
+    expect(exitCode).toBe(0);
+
+    const status = createMemoryIo();
+    exitCode = await runCli(["status", "--config", configPath, "--json"], status.io);
+    expect(exitCode).toBe(0);
+
+    const statusOutput = JSON.parse(status.readStdout()) as {
+      endpoints: Array<{ http?: { statusCode?: number }; name: string }>;
+    };
+    expect(statusOutput.endpoints.find((entry) => entry.name === "api")?.http?.statusCode).toBe(200);
+  });
+
   it("supports ad-hoc insecure checks against a self-signed HTTPS endpoint", async () => {
     const certs = selfsigned.generate(
       [
@@ -179,10 +282,14 @@ describe("TAKCLI integration", () => {
       throw new Error("Expected a bound address.");
     }
 
+    const baseDir = await mkdtemp(path.join(os.tmpdir(), "takcli-cli-adhoc-"));
+    const configPath = path.join(baseDir, "config.yaml");
     const status = createMemoryIo();
     let exitCode = await runCli(
       [
         "status",
+        "--config",
+        configPath,
         "--server",
         `https://127.0.0.1:${address.port}`,
         "--api-port",
@@ -208,6 +315,8 @@ describe("TAKCLI integration", () => {
     exitCode = await runCli(
       [
         "doctor",
+        "--config",
+        configPath,
         "--server",
         `https://127.0.0.1:${address.port}`,
         "--api-port",
@@ -289,10 +398,14 @@ describe("TAKCLI integration", () => {
   });
 
   it("returns a non-zero exit code when status is degraded", async () => {
+    const baseDir = await mkdtemp(path.join(os.tmpdir(), "takcli-cli-degraded-"));
+    const configPath = path.join(baseDir, "config.yaml");
     const io = createMemoryIo();
     const exitCode = await runCli(
       [
         "status",
+        "--config",
+        configPath,
         "--server",
         "https://127.0.0.1:65530",
         "--json"

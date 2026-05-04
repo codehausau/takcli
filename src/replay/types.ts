@@ -74,6 +74,32 @@ export interface ReplayRunResult {
   startFromTime: string;
 }
 
+export interface ReplayTelemetryProfile {
+  cotPort: number;
+  name?: string;
+  server: string;
+}
+
+export interface ReplayTelemetrySnapshot {
+  completedAt?: string;
+  currentSourceTime?: string;
+  currentUid?: string;
+  dataset: {
+    detectedSource: ReplaySourceName;
+    endTime: string;
+    filePath: string;
+    startTime: string;
+    trackPoints: number;
+  };
+  maxEvents?: number;
+  profile: ReplayTelemetryProfile;
+  sentEvents: number;
+  speed: number;
+  startedAt: string;
+  startFromTime: string;
+  state: "completed" | "idle" | "paused" | "running" | "stopped";
+  updatedAt: string;
+}
 export interface ReplayRunner {
   getSnapshot: () => ReplayProgressSnapshot;
   pause: () => void;

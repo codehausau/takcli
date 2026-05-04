@@ -74,6 +74,7 @@ export function resolveReplayStartIndex(dataset: ReplayDatasetSummary, startFrom
 class ReplayRunnerImpl implements ReplayRunner {
   private currentIndex: number;
 
+  private lastSentTrackPoint: ReplayTrackPoint | undefined;
   private paused = false;
 
   private pendingIndex: number | undefined;
@@ -181,6 +182,7 @@ class ReplayRunnerImpl implements ReplayRunner {
         );
         const bytesSent = await writer.send(xml);
         this.sentEvents += 1;
+        this.lastSentTrackPoint = trackPoint;
         this.options.onEventSent?.({
           bytesSent,
           sentEvents: this.sentEvents,
@@ -243,7 +245,7 @@ class ReplayRunnerImpl implements ReplayRunner {
         totalFeatures: this.dataset.totalFeatures,
         trackPoints: this.dataset.trackPoints.length
       },
-      finalTrackPointTime: this.dataset.trackPoints[Math.max(0, this.currentIndex - 1)]?.sourceTime,
+      finalTrackPointTime: this.lastSentTrackPoint?.sourceTime,
       maxEvents: this.options.maxEvents,
       profile: this.options.profile,
       sentEvents: this.sentEvents,

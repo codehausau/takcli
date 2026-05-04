@@ -30,6 +30,7 @@ Use:
 ./scripts/build-unhardened-takserver-images.sh \
   --tak-server-repo /path/to/tak-server \
   --tag 5.2-RELEASE-16 \
+  --platforms linux/amd64,linux/arm64 \
   --image-prefix docker.io/codehausau
 ```
 
@@ -39,6 +40,7 @@ To push as well:
 ./scripts/build-unhardened-takserver-images.sh \
   --tak-server-repo /path/to/tak-server \
   --tag 5.2-RELEASE-16 \
+  --platforms linux/amd64,linux/arm64 \
   --image-prefix docker.io/codehausau \
   --push \
   --tag-latest
@@ -56,6 +58,9 @@ To push as well:
 - builds:
   - `docker.io/codehausau/takserver-full:<tag>`
   - `docker.io/codehausau/takserver-db:<tag>`
+- publishes a multi-platform manifest when `--push` is used
+- exports OCI archives to the workspace for multi-platform builds when `--push` is omitted
+- for repeatable local output paths, pass `--workspace <dir>` when exporting multi-platform archives
 
 ## Why manual first
 
