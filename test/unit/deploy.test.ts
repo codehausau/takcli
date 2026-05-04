@@ -5,7 +5,7 @@ import {
   renderComposeEnvFile,
   renderTakCliComposeYaml
 } from "../../src/deploy/compose.js";
-import { createDeployImages, inferImageTag } from "../../src/deploy/images.js";
+import { createDeployImages, DEFAULT_DB_IMAGE, inferImageTag } from "../../src/deploy/images.js";
 import { renderTakCliKubernetesYaml } from "../../src/deploy/kubernetes.js";
 import { createRefCacheSegment } from "../../src/deploy/repo.js";
 import { checkDeployDependencies } from "../../src/deploy/system.js";
@@ -47,6 +47,7 @@ describe("deploy helpers", () => {
     const request: DeployRequest = {
       certsDir: "/tmp/tak/certs",
       dataDir: "/tmp/tak/data",
+      dbImage: DEFAULT_DB_IMAGE,
       deploymentName: "demo",
       deploymentRoot: "/tmp/tak/deployments/demo",
       dryRun: true,
@@ -69,7 +70,7 @@ describe("deploy helpers", () => {
     };
 
     expect(document.services.takserver.image).toBe("docker.io/codehausau/takserver-full:main");
-    expect(document.services["tak-database"].image).toBe("postgis/postgis:15-3.3");
+    expect(document.services["tak-database"].image).toBe("kartoza/postgis:15-3.4");
     expect(document.services.takserver.volumes).toContain("/tmp/tak/data:/opt/tak/data");
     expect(document.services.takserver.volumes).toContain("/tmp/tak/logs:/opt/tak/data/logs");
     expect(document.services.takserver.volumes).toContain("/tmp/tak/certs:/opt/tak/data/certs");
@@ -83,6 +84,7 @@ describe("deploy helpers", () => {
       },
       certsDir: "/tmp/tak/certs",
       dataDir: "/tmp/tak/data",
+      dbImage: DEFAULT_DB_IMAGE,
       deploymentName: "demo",
       deploymentRoot: "/tmp/tak/deployments/demo",
       dryRun: true,
@@ -119,6 +121,7 @@ describe("deploy helpers", () => {
     const request: DeployRequest = {
       certsDir: "/tmp/tak/certs",
       dataDir: "/tmp/tak/data",
+      dbImage: DEFAULT_DB_IMAGE,
       deploymentName: "demo-cluster",
       deploymentRoot: "/tmp/tak/deployments/demo",
       dryRun: true,
@@ -175,6 +178,13 @@ describe("deploy helpers", () => {
 
     expect(result.missing.map((dependency) => dependency.name)).toContain("docker compose");
     expect(result.missing.map((dependency) => dependency.name)).not.toContain("git");
+  });
+
+  it("allows overriding the database image", () => {
+    const images = createDeployImages("docker.io/codehausau", "latest", "example/postgis:custom");
+
+    expect(images.db).toBe("example/postgis:custom");
+    expect(images.server).toBe("docker.io/codehausau/takserver-full:latest");
   });
 
   it("only requires kubectl for kubernetes deployments", async () => {

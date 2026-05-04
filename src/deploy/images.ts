@@ -1,6 +1,6 @@
 import type { ComposeImageSet } from "./types.js";
 
-const DEFAULT_DB_IMAGE = "postgis/postgis:15-3.3";
+export const DEFAULT_DB_IMAGE = "kartoza/postgis:15-3.4";
 
 export function inferImageTag(ref: string): string | undefined {
   if (ref === "main") {
@@ -10,10 +10,10 @@ export function inferImageTag(ref: string): string | undefined {
   return /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(ref) ? ref : undefined;
 }
 
-export function createDeployImages(registry: string, imageTag: string): ComposeImageSet {
+export function createDeployImages(registry: string, imageTag: string, dbImage = DEFAULT_DB_IMAGE): ComposeImageSet {
   const prefix = registry.replace(/\/+$/, "");
   return {
-    db: DEFAULT_DB_IMAGE,
+    db: dbImage,
     server: `${prefix}/takserver-full:${imageTag}`
   };
 }

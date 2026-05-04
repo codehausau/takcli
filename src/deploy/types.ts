@@ -95,6 +95,7 @@ export interface DeployWizardOptions {
   caPass?: string;
   certsDir?: string;
   city?: string;
+  dbImage?: string;
   dataDir?: string;
   deploymentName?: string;
   deploymentRoot?: string;
@@ -124,6 +125,7 @@ export interface DeployRequest {
   certsDir: string;
   cacheRoot?: string;
   dataDir: string;
+  dbImage: string;
   deploymentName: string;
   deploymentRoot: string;
   dryRun: boolean;
