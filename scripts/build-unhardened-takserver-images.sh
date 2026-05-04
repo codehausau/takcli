@@ -274,7 +274,6 @@ for required_path in \
   "$SCHEMA_MANAGER_JAR" \
   "$USER_MANAGER_JAR" \
   "$SRC_DIR/takserver-core/docker/full/Dockerfile.takserver" \
-  "$SRC_DIR/takserver-schemamanager/docker/Dockerfile.takserver-db" \
   "$SRC_DIR/takserver-core/docker/full/docker_entrypoint.sh" \
   "$SRC_DIR/takserver-core/docker/full/coreConfigEnvHelper.py" \
   "$SRC_DIR/takserver-schemamanager/docker/configureInDocker.sh" \
@@ -333,24 +332,12 @@ FROM postgres:15.1
 RUN apt-get update && apt-get install -y postgresql-15-postgis-3 openjdk-17-jdk
 EOF
 
-cat > "$DOCKER_DIR/Dockerfile.takserver-db" <<'EOF'
-FROM postgres:15.1
-
-RUN apt-get update && apt install -y postgresql-15-postgis-3 openjdk-17-jdk
-
-COPY tak /opt/tak
-
-ENTRYPOINT ["/opt/tak/db-utils/configureInDocker.sh"]
-EOF
-
 POSTGIS_BASE_IMAGE="${IMAGE_PREFIX%/}/postgres15-postgis3:${TAG}"
 SERVER_IMAGE="${IMAGE_PREFIX%/}/takserver-full:${TAG}"
-DB_IMAGE="${IMAGE_PREFIX%/}/takserver-db:${TAG}"
 
 printf 'Assembled Docker context at %s\n' "$CONTEXT_DIR"
 printf 'PostGIS base image: %s\n' "$POSTGIS_BASE_IMAGE"
 printf 'Server image: %s\n' "$SERVER_IMAGE"
-printf 'Database image: %s\n' "$DB_IMAGE"
 
 if [[ "$ASSEMBLE_ONLY" -eq 1 ]]; then
   printf 'Skipping docker build because --assemble-only was requested.\n'
@@ -364,18 +351,15 @@ fi
 if [[ "$TAG_LATEST" -eq 1 ]]; then
   POSTGIS_BASE_IMAGE_LATEST="${IMAGE_PREFIX%/}/postgres15-postgis3:latest"
   SERVER_IMAGE_LATEST="${IMAGE_PREFIX%/}/takserver-full:latest"
-  DB_IMAGE_LATEST="${IMAGE_PREFIX%/}/takserver-db:latest"
 fi
 
 ensure_buildx
 
 POSTGIS_BASE_ARCHIVE="$WORKSPACE/postgres15-postgis3-${TAG}.oci.tar"
 SERVER_ARCHIVE="$WORKSPACE/takserver-full-${TAG}.oci.tar"
-DB_ARCHIVE="$WORKSPACE/takserver-db-${TAG}.oci.tar"
 
 build_image "$DOCKER_DIR/Dockerfile.postgres15-postgis3" "$POSTGIS_BASE_IMAGE" "${POSTGIS_BASE_IMAGE_LATEST:-}" "$POSTGIS_BASE_ARCHIVE"
 build_image "$DOCKER_DIR/Dockerfile.takserver" "$SERVER_IMAGE" "${SERVER_IMAGE_LATEST:-}" "$SERVER_ARCHIVE"
-build_image "$DOCKER_DIR/Dockerfile.takserver-db" "$DB_IMAGE" "${DB_IMAGE_LATEST:-}" "$DB_ARCHIVE"
 
 if [[ "$PUSH" -eq 1 ]]; then
   printf 'Pushed multi-platform images for %s\n' "$PLATFORMS"
@@ -383,7 +367,6 @@ elif is_multi_platform "$PLATFORMS"; then
   printf 'Exported multi-platform OCI archives:\n'
   printf '  %s\n' "$POSTGIS_BASE_ARCHIVE"
   printf '  %s\n' "$SERVER_ARCHIVE"
-  printf '  %s\n' "$DB_ARCHIVE"
   printf 'Workspace preserved at %s\n' "$WORKSPACE"
 else
   printf 'Loaded single-platform images into the local Docker daemon for %s\n' "$PLATFORMS"

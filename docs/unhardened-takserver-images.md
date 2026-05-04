@@ -58,7 +58,6 @@ To push as well:
 - builds:
   - `docker.io/codehausau/postgres15-postgis3:<tag>`
   - `docker.io/codehausau/takserver-full:<tag>`
-  - `docker.io/codehausau/takserver-db:<tag>`
 - publishes a multi-platform manifest when `--push` is used
 - exports OCI archives to the workspace for multi-platform builds when `--push` is omitted
 - for repeatable local output paths, pass `--workspace <dir>` when exporting multi-platform archives
