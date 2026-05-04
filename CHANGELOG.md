@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.11.0](https://github.com/codehausau/takcli/compare/takcli-v0.10.0...takcli-v0.11.0) (2026-05-04)
+
+
+### Features
+
+* make deploy database image configurable ([ad4c93e](https://github.com/codehausau/takcli/commit/ad4c93e0540923ab5297c5c428f84a27922d398b))
+* make deploy database image configurable ([0a4eecf](https://github.com/codehausau/takcli/commit/0a4eecf55086fc3b28dbd6de55ef19dc6fcfb23a))
+
 ## [0.10.0](https://github.com/codehausau/takcli/compare/takcli-v0.9.0...takcli-v0.10.0) (2026-05-04)
 
 
