@@ -5,24 +5,12 @@ import {
   renderComposeEnvFile,
   renderTakCliComposeYaml
 } from "../../src/deploy/compose.js";
-import { createDeployImages, DEFAULT_DB_IMAGE, inferImageTag } from "../../src/deploy/images.js";
+import { createDeployImages, DEFAULT_DB_IMAGE } from "../../src/deploy/images.js";
 import { renderTakCliKubernetesYaml } from "../../src/deploy/kubernetes.js";
-import { createRefCacheSegment } from "../../src/deploy/repo.js";
 import { checkDeployDependencies } from "../../src/deploy/system.js";
 import type { CommandRunner, DeployRequest } from "../../src/deploy/types.js";
 
 describe("deploy helpers", () => {
-  it("infers safe image tags from simple refs", () => {
-    expect(inferImageTag("main")).toBe("latest");
-    expect(inferImageTag("v1.2.3")).toBe("v1.2.3");
-    expect(inferImageTag("feature/test")).toBeUndefined();
-  });
-
-  it("creates stable cache segments for refs", () => {
-    expect(createRefCacheSegment("main")).toMatch(/^main-[0-9a-f]{12}$/);
-    expect(createRefCacheSegment("feature/test")).toMatch(/^feature-test-[0-9a-f]{12}$/);
-  });
-
   it("renders compose environment values", () => {
     const envFile = renderComposeEnvFile({
       adminCertName: "admin",
@@ -43,7 +31,7 @@ describe("deploy helpers", () => {
     expect(envFile).toContain("POSTGRES_URL=jdbc:postgresql://tak-database:5432/cot");
   });
 
-  it("renders a TAKCLI-managed compose file with the published server image and upstream postgres", () => {
+  it("renders a TAKCLI-managed compose file with the published server and database images", () => {
     const request: DeployRequest = {
       certsDir: "/tmp/tak/certs",
       dataDir: "/tmp/tak/data",
@@ -54,9 +42,7 @@ describe("deploy helpers", () => {
       flavor: "unhardened",
       imageTag: "main",
       logsDir: "/tmp/tak/logs",
-      ref: "main",
       registry: "docker.io/codehausau",
-      repoUrl: "https://github.com/TAK-Product-Center/Server.git",
       target: "docker-compose",
       yes: true
     };
@@ -64,13 +50,24 @@ describe("deploy helpers", () => {
     const images = createDeployImages(request.registry, request.imageTag);
     const document = YAML.parse(renderTakCliComposeYaml(images, request)) as {
       services: {
-        "tak-database": { image: string };
-        takserver: { image: string; volumes: string[] };
+        "tak-database": {
+          healthcheck: { interval: string; retries: number; start_period: string; test: string[]; timeout: string };
+          image: string;
+        };
+        takserver: {
+          depends_on: Record<string, { condition: string }>;
+          image: string;
+          volumes: string[];
+        };
       };
     };
 
     expect(document.services.takserver.image).toBe("docker.io/codehausau/takserver-full:main");
-    expect(document.services["tak-database"].image).toBe("kartoza/postgis:15-3.4");
+    expect(document.services["tak-database"].image).toBe("docker.io/codehausau/postgres15-postgis3:main");
+    expect(document.services.takserver.depends_on["tak-database"].condition).toBe("service_healthy");
+    expect(document.services["tak-database"].healthcheck.test).toContain(
+      "pg_isready -h 127.0.0.1 -p 5432 -U martiuser -d cot || exit 1"
+    );
     expect(document.services.takserver.volumes).toContain("/tmp/tak/data:/opt/tak/data");
     expect(document.services.takserver.volumes).toContain("/tmp/tak/logs:/opt/tak/data/logs");
     expect(document.services.takserver.volumes).toContain("/tmp/tak/certs:/opt/tak/data/certs");
@@ -91,9 +88,7 @@ describe("deploy helpers", () => {
       flavor: "unhardened",
       imageTag: "main",
       logsDir: "/tmp/tak/logs",
-      ref: "main",
       registry: "docker.io/codehausau",
-      repoUrl: "https://github.com/TAK-Product-Center/Server.git",
       target: "docker-compose",
       yes: true
     };
@@ -128,9 +123,7 @@ describe("deploy helpers", () => {
       flavor: "unhardened",
       imageTag: "main",
       logsDir: "/tmp/tak/logs",
-      ref: "main",
       registry: "docker.io/codehausau",
-      repoUrl: "https://github.com/TAK-Product-Center/Server.git",
       target: "kubernetes",
       yes: true
     };

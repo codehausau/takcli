@@ -317,9 +317,7 @@ export function renderTakCliKubernetesYaml(
 }
 
 export async function prepareKubernetesWorkspace(options: {
-  clonePath: string;
   envValues: DeployEnvironmentValues;
-  gitCommit: string;
   request: DeployRequest;
 }): Promise<KubernetesWorkspace> {
   await mkdir(options.request.deploymentRoot, { recursive: true });
@@ -335,15 +333,11 @@ export async function prepareKubernetesWorkspace(options: {
     YAML.stringify({
       deploymentName: options.request.deploymentName,
       flavor: options.request.flavor,
-      gitCommit: options.gitCommit,
       kubernetes: {
         manifestPath,
         namespace
       },
-      ref: options.request.ref,
       registry: options.request.registry,
-      repoUrl: options.request.repoUrl,
-      sourceClonePath: options.clonePath,
       target: options.request.target,
       workspace: {
         certsDir: options.request.certsDir,

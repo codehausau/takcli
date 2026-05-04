@@ -1,19 +1,18 @@
 import type { ComposeImageSet } from "./types.js";
 
-export const DEFAULT_DB_IMAGE = "kartoza/postgis:15-3.4";
+export const DEFAULT_DB_IMAGE_REPOSITORY = "postgres15-postgis3";
 
-export function inferImageTag(ref: string): string | undefined {
-  if (ref === "main") {
-    return "latest";
-  }
-
-  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(ref) ? ref : undefined;
-}
-
-export function createDeployImages(registry: string, imageTag: string, dbImage = DEFAULT_DB_IMAGE): ComposeImageSet {
+export function createDeployImages(registry: string, imageTag: string, dbImage?: string): ComposeImageSet {
   const prefix = registry.replace(/\/+$/, "");
   return {
-    db: dbImage,
+    db: dbImage ?? createDefaultDbImage(registry, imageTag),
     server: `${prefix}/takserver-full:${imageTag}`
   };
 }
+
+export function createDefaultDbImage(registry: string, imageTag: string): string {
+  const prefix = registry.replace(/\/+$/, "");
+  return `${prefix}/${DEFAULT_DB_IMAGE_REPOSITORY}:${imageTag}`;
+}
+
+export const DEFAULT_DB_IMAGE = createDefaultDbImage("docker.io/codehausau", "latest");

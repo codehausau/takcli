@@ -56,6 +56,7 @@ To push as well:
   - `UserManager.jar`
 - assembles a clean `/opt/tak` payload without reusing locally generated cert material
 - builds:
+  - `docker.io/codehausau/postgres15-postgis3:<tag>`
   - `docker.io/codehausau/takserver-full:<tag>`
   - `docker.io/codehausau/takserver-db:<tag>`
 - publishes a multi-platform manifest when `--push` is used

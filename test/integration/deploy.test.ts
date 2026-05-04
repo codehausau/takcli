@@ -122,25 +122,6 @@ class MissingKubectlRunner implements CommandRunner {
   }
 }
 
-async function createFakeTakServerRepo(): Promise<string> {
-  const repoDir = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-repo-"));
-  const composeDir = path.join(repoDir, "src", "takserver-core", "docker", "full");
-  await mkdir(composeDir, { recursive: true });
-  await writeFile(
-    path.join(composeDir, "docker-compose.yml"),
-    "version: '3.4'\nservices:\n  takserver:\n    image: takserver:latest\n",
-    "utf8"
-  );
-  await writeFile(path.join(composeDir, "EDIT_ME.env"), "POSTGRES_PASSWORD=\n", "utf8");
-  await execFileAsync("git", ["init"], { cwd: repoDir });
-  await execFileAsync("git", ["checkout", "-b", "main"], { cwd: repoDir });
-  await execFileAsync("git", ["config", "user.name", "TAKCLI Test"], { cwd: repoDir });
-  await execFileAsync("git", ["config", "user.email", "takcli@example.invalid"], { cwd: repoDir });
-  await execFileAsync("git", ["add", "."], { cwd: repoDir });
-  await execFileAsync("git", ["commit", "-m", "init"], { cwd: repoDir });
-  return repoDir;
-}
-
 function createServices(runner: CommandRunner): CliServices {
   return {
     deploy: {
@@ -205,7 +186,6 @@ class RecordingPrompt implements DeployPrompt {
       "Initial WebTAK username": "admin",
       "Postgres password": "postgres-pass",
       "TAK Server certificate password": "tak-pass",
-      "TAK Server git ref": "main",
       "TAK certs directory": "/tmp/takcli-prompt-data/certs",
       "TAK logs directory": "/tmp/takcli-prompt-data/logs"
     };
@@ -283,7 +263,6 @@ class RetryingPrompt implements DeployPrompt {
       "Initial WebTAK username": ["admin"],
       "Postgres password": ["postgres-pass"],
       "TAK Server certificate password": ["tak-pass"],
-      "TAK Server git ref": ["main"],
       "TAK certs directory": ["/tmp/takcli-retry-data/certs"],
       "TAK logs directory": ["/tmp/takcli-retry-data/logs"],
       ...(options?.values ?? {})
@@ -351,9 +330,7 @@ describe("deploy integration", () => {
     expect(io.readStderr()).toContain("Required deploy dependencies are missing.");
   });
 
-  it("prepares an unhardened compose workspace from an official repo clone", async () => {
-    const repoDir = await createFakeTakServerRepo();
-    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
+  it("prepares an unhardened compose workspace from TAKCLI-managed templates", async () => {
     const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-workspace-"));
     const dataDir = path.join(deploymentRoot, "data");
     const logsDir = path.join(dataDir, "logs");
@@ -366,12 +343,6 @@ describe("deploy integration", () => {
         "deploy",
         "--target",
         "docker-compose",
-        "--ref",
-        "main",
-        "--repo-url",
-        repoDir,
-        "--cache-root",
-        cacheRoot,
         "--name",
         "demo",
         "--deployment-root",
@@ -416,7 +387,6 @@ describe("deploy integration", () => {
 
     expect(exitCode).toBe(0);
     const output = JSON.parse(io.readStdout()) as {
-      clonePath: string;
       compose: {
         composeFilePath: string;
         images: { db: string; server: string };
@@ -426,20 +396,18 @@ describe("deploy integration", () => {
 
     expect(output.target).toBe("docker-compose");
     expect(output.compose.images.server).toBe("docker.io/codehausau/takserver-full:main");
-    expect(output.compose.images.db).toBe("kartoza/postgis:15-3.4");
+    expect(output.compose.images.db).toBe("docker.io/codehausau/postgres15-postgis3:main");
     await access(output.compose.composeFilePath);
 
     const composeFile = await readFile(output.compose.composeFilePath, "utf8");
     expect(composeFile).toContain("docker.io/codehausau/takserver-full:main");
-    expect(composeFile).toContain("kartoza/postgis:15-3.4");
+    expect(composeFile).toContain("docker.io/codehausau/postgres15-postgis3:main");
 
     const envStats = await stat(path.join(deploymentRoot, ".env"));
     expect(envStats.mode & 0o777).toBe(0o600);
   });
 
   it("renders ADS-B gateway assets when requested for a compose deployment", async () => {
-    const repoDir = await createFakeTakServerRepo();
-    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
     const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-compose-adsb-"));
     const runner = new HybridRunner();
     const io = createMemoryIo();
@@ -449,12 +417,6 @@ describe("deploy integration", () => {
         "deploy",
         "--target",
         "docker-compose",
-        "--ref",
-        "main",
-        "--repo-url",
-        repoDir,
-        "--cache-root",
-        cacheRoot,
         "--name",
         "demo-adsb",
         "--deployment-root",
@@ -523,8 +485,6 @@ describe("deploy integration", () => {
   });
 
   it("allows overriding the database image for a compose deployment", async () => {
-    const repoDir = await createFakeTakServerRepo();
-    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
     const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-compose-db-image-"));
     const runner = new HybridRunner();
     const io = createMemoryIo();
@@ -534,12 +494,6 @@ describe("deploy integration", () => {
         "deploy",
         "--target",
         "docker-compose",
-        "--ref",
-        "main",
-        "--repo-url",
-        repoDir,
-        "--cache-root",
-        cacheRoot,
         "--name",
         "demo-db-image",
         "--deployment-root",
@@ -598,8 +552,6 @@ describe("deploy integration", () => {
   });
 
   it("builds a geographic adsb.fi v3 feed URL when ADS-B geo mode is selected", async () => {
-    const repoDir = await createFakeTakServerRepo();
-    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
     const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-compose-adsb-geo-"));
     const runner = new HybridRunner();
     const io = createMemoryIo();
@@ -609,12 +561,6 @@ describe("deploy integration", () => {
         "deploy",
         "--target",
         "docker-compose",
-        "--ref",
-        "main",
-        "--repo-url",
-        repoDir,
-        "--cache-root",
-        cacheRoot,
         "--name",
         "demo-adsb-geo",
         "--deployment-root",
@@ -673,9 +619,7 @@ describe("deploy integration", () => {
     expect(adsbConfig).toContain("FEED_URL = https://opendata.adsb.fi/api/v3/lat/60.3179/lon/24.9496/dist/25");
   });
 
-  it("rejects certificate passwords shorter than six characters before cloning", async () => {
-    const repoDir = await createFakeTakServerRepo();
-    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
+  it("rejects certificate passwords shorter than six characters before rendering", async () => {
     const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-workspace-"));
     const dataDir = path.join(deploymentRoot, "data");
     const logsDir = path.join(dataDir, "logs");
@@ -688,12 +632,6 @@ describe("deploy integration", () => {
         "deploy",
         "--target",
         "docker-compose",
-        "--ref",
-        "main",
-        "--repo-url",
-        repoDir,
-        "--cache-root",
-        cacheRoot,
         "--name",
         "demo",
         "--deployment-root",
@@ -740,9 +678,7 @@ describe("deploy integration", () => {
     expect(runner.invocations.some((invocation) => invocation.startsWith("git clone "))).toBe(false);
   });
 
-  it("rejects weak initial WebTAK passwords before cloning", async () => {
-    const repoDir = await createFakeTakServerRepo();
-    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
+  it("rejects weak initial WebTAK passwords before rendering", async () => {
     const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-workspace-"));
     const dataDir = path.join(deploymentRoot, "data");
     const logsDir = path.join(dataDir, "logs");
@@ -755,12 +691,6 @@ describe("deploy integration", () => {
         "deploy",
         "--target",
         "docker-compose",
-        "--ref",
-        "main",
-        "--repo-url",
-        repoDir,
-        "--cache-root",
-        cacheRoot,
         "--name",
         "demo",
         "--deployment-root",
@@ -812,8 +742,6 @@ describe("deploy integration", () => {
   });
 
   it("rejects WebTAK bootstrap flags for kubernetes deployments", async () => {
-    const repoDir = await createFakeTakServerRepo();
-    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
     const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-workspace-"));
     const runner = new HybridRunner();
     const io = createMemoryIo();
@@ -823,12 +751,6 @@ describe("deploy integration", () => {
         "deploy",
         "--target",
         "kubernetes",
-        "--ref",
-        "main",
-        "--repo-url",
-        repoDir,
-        "--cache-root",
-        cacheRoot,
         "--name",
         "demo-k8s",
         "--deployment-root",
@@ -876,9 +798,7 @@ describe("deploy integration", () => {
     expect(io.readStderr()).toContain("only supported for docker-compose deployments");
   });
 
-  it("defaults the main ref to the latest image tag", async () => {
-    const repoDir = await createFakeTakServerRepo();
-    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
+  it("defaults the image tag to latest", async () => {
     const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-workspace-"));
     const dataDir = path.join(deploymentRoot, "data");
     const logsDir = path.join(dataDir, "logs");
@@ -891,12 +811,6 @@ describe("deploy integration", () => {
         "deploy",
         "--target",
         "kubernetes",
-        "--ref",
-        "main",
-        "--repo-url",
-        repoDir,
-        "--cache-root",
-        cacheRoot,
         "--name",
         "default-tag",
         "--deployment-root",
@@ -950,8 +864,6 @@ describe("deploy integration", () => {
   });
 
   it("marks sensitive deploy prompts as secret input", async () => {
-    const repoDir = await createFakeTakServerRepo();
-    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
     const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-workspace-"));
     const dataDir = path.join(deploymentRoot, "data");
     const logsDir = path.join(dataDir, "logs");
@@ -965,10 +877,6 @@ describe("deploy integration", () => {
         "deploy",
         "--target",
         "docker-compose",
-        "--repo-url",
-        repoDir,
-        "--cache-root",
-        cacheRoot,
         "--name",
         "demo",
         "--deployment-root",
@@ -998,8 +906,6 @@ describe("deploy integration", () => {
   });
 
   it("prompts for an initial WebTAK user during interactive compose deploys", async () => {
-    const repoDir = await createFakeTakServerRepo();
-    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
     const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-prompt-webtak-"));
     const dataDir = path.join(deploymentRoot, "data");
     const logsDir = path.join(dataDir, "logs");
@@ -1013,10 +919,6 @@ describe("deploy integration", () => {
         "deploy",
         "--target",
         "docker-compose",
-        "--repo-url",
-        repoDir,
-        "--cache-root",
-        cacheRoot,
         "--name",
         "demo",
         "--deployment-root",
@@ -1043,8 +945,6 @@ describe("deploy integration", () => {
   });
 
   it("can enable ADS-B interactively and prompt for geographic source details", async () => {
-    const repoDir = await createFakeTakServerRepo();
-    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
     const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-prompt-adsb-"));
     const dataDir = path.join(deploymentRoot, "data");
     const logsDir = path.join(dataDir, "logs");
@@ -1061,10 +961,6 @@ describe("deploy integration", () => {
         "deploy",
         "--target",
         "docker-compose",
-        "--repo-url",
-        repoDir,
-        "--cache-root",
-        cacheRoot,
         "--name",
         "prompt-adsb",
         "--deployment-root",
@@ -1097,8 +993,6 @@ describe("deploy integration", () => {
   });
 
   it("re-prompts certificate passwords after validation failures", async () => {
-    const repoDir = await createFakeTakServerRepo();
-    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
     const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-retry-workspace-"));
     const prompt = new RetryingPrompt();
     const runner = new HybridRunner();
@@ -1109,10 +1003,6 @@ describe("deploy integration", () => {
         "deploy",
         "--target",
         "docker-compose",
-        "--repo-url",
-        repoDir,
-        "--cache-root",
-        cacheRoot,
         "--name",
         "retry-demo",
         "--deployment-root",
@@ -1135,8 +1025,6 @@ describe("deploy integration", () => {
   });
 
   it("re-prompts empty password entries instead of exiting", async () => {
-    const repoDir = await createFakeTakServerRepo();
-    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
     const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-empty-retry-workspace-"));
     const prompt = new RetryingPrompt({
       values: {
@@ -1151,10 +1039,6 @@ describe("deploy integration", () => {
         "deploy",
         "--target",
         "docker-compose",
-        "--repo-url",
-        repoDir,
-        "--cache-root",
-        cacheRoot,
         "--name",
         "empty-retry-demo",
         "--deployment-root",
@@ -1177,8 +1061,6 @@ describe("deploy integration", () => {
   });
 
   it("re-prompts the initial WebTAK password after validation failures", async () => {
-    const repoDir = await createFakeTakServerRepo();
-    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
     const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-webtak-retry-"));
     const prompt = new RetryingPrompt({
       confirms: [true, true],
@@ -1195,10 +1077,6 @@ describe("deploy integration", () => {
         "deploy",
         "--target",
         "docker-compose",
-        "--repo-url",
-        repoDir,
-        "--cache-root",
-        cacheRoot,
         "--name",
         "webtak-retry-demo",
         "--deployment-root",
@@ -1220,9 +1098,7 @@ describe("deploy integration", () => {
     expect(prompt.inputCalls.filter((call) => call.message === "Initial WebTAK password")).toHaveLength(2);
   });
 
-  it("defaults the prompted image tag to latest when the ref is main", async () => {
-    const repoDir = await createFakeTakServerRepo();
-    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
+  it("defaults the prompted image tag to latest", async () => {
     const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-workspace-"));
     const dataDir = path.join(deploymentRoot, "data");
     const logsDir = path.join(dataDir, "logs");
@@ -1236,10 +1112,6 @@ describe("deploy integration", () => {
         "deploy",
         "--target",
         "docker-compose",
-        "--repo-url",
-        repoDir,
-        "--cache-root",
-        cacheRoot,
         "--name",
         "demo",
         "--deployment-root",
@@ -1273,9 +1145,7 @@ describe("deploy integration", () => {
     expect(output.compose.images.server).toBe("docker.io/codehausau/takserver-full:latest");
   });
 
-  it("prepares a Kubernetes workspace from an official repo clone", async () => {
-    const repoDir = await createFakeTakServerRepo();
-    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
+  it("prepares a Kubernetes workspace from TAKCLI-managed templates", async () => {
     const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-k8s-workspace-"));
     const dataDir = path.join(deploymentRoot, "data");
     const logsDir = path.join(dataDir, "logs");
@@ -1288,12 +1158,6 @@ describe("deploy integration", () => {
         "deploy",
         "--target",
         "kubernetes",
-        "--ref",
-        "main",
-        "--repo-url",
-        repoDir,
-        "--cache-root",
-        cacheRoot,
         "--name",
         "demo-k8s",
         "--deployment-root",
@@ -1348,7 +1212,7 @@ describe("deploy integration", () => {
 
     expect(output.target).toBe("kubernetes");
     expect(output.kubernetes.images.server).toBe("docker.io/codehausau/takserver-full:main");
-    expect(output.kubernetes.images.db).toBe("kartoza/postgis:15-3.4");
+    expect(output.kubernetes.images.db).toBe("docker.io/codehausau/postgres15-postgis3:main");
     expect(output.kubernetes.namespace).toBe("demo-k8s");
     await access(output.kubernetes.manifestPath);
 
@@ -1359,8 +1223,6 @@ describe("deploy integration", () => {
   });
 
   it("applies Kubernetes manifests when dry-run is disabled", async () => {
-    const repoDir = await createFakeTakServerRepo();
-    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
     const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-k8s-apply-"));
     const runner = new HybridRunner();
 
@@ -1369,12 +1231,6 @@ describe("deploy integration", () => {
         "deploy",
         "--target",
         "kubernetes",
-        "--ref",
-        "main",
-        "--repo-url",
-        repoDir,
-        "--cache-root",
-        cacheRoot,
         "--name",
         "apply-k8s",
         "--deployment-root",
@@ -1420,8 +1276,6 @@ describe("deploy integration", () => {
   });
 
   it("bootstraps an initial WebTAK user after compose startup when requested", async () => {
-    const repoDir = await createFakeTakServerRepo();
-    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
     const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-compose-apply-"));
     const runner = new HybridRunner();
 
@@ -1430,12 +1284,6 @@ describe("deploy integration", () => {
         "deploy",
         "--target",
         "docker-compose",
-        "--ref",
-        "main",
-        "--repo-url",
-        repoDir,
-        "--cache-root",
-        cacheRoot,
         "--name",
         "apply-compose",
         "--deployment-root",
@@ -1491,8 +1339,6 @@ describe("deploy integration", () => {
   });
 
   it("can save compose deployments into TAKCLI profiles after a successful deploy", async () => {
-    const repoDir = await createFakeTakServerRepo();
-    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
     const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-compose-profiles-"));
     const configPath = path.join(deploymentRoot, "takcli-config.yaml");
     const certsFilesDir = path.join(deploymentRoot, "data", "certs", "files");
@@ -1528,12 +1374,6 @@ describe("deploy integration", () => {
         configPath,
         "--target",
         "docker-compose",
-        "--ref",
-        "main",
-        "--repo-url",
-        repoDir,
-        "--cache-root",
-        cacheRoot,
         "--name",
         "profiled-compose",
         "--deployment-root",
@@ -1580,8 +1420,6 @@ describe("deploy integration", () => {
   });
 
   it("can save compose deployments into TAKCLI profiles during non-interactive deploys", async () => {
-    const repoDir = await createFakeTakServerRepo();
-    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
     const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-compose-profiles-"));
     const configPath = path.join(deploymentRoot, "takcli-config.yaml");
     const certsFilesDir = path.join(deploymentRoot, "data", "certs", "files");
@@ -1611,12 +1449,6 @@ describe("deploy integration", () => {
         configPath,
         "--target",
         "docker-compose",
-        "--ref",
-        "main",
-        "--repo-url",
-        repoDir,
-        "--cache-root",
-        cacheRoot,
         "--name",
         "noninteractive-compose",
         "--deployment-root",
@@ -1681,8 +1513,6 @@ describe("deploy integration", () => {
   });
 
   it("tracks successful compose deployments in the deployment state file", async () => {
-    const repoDir = await createFakeTakServerRepo();
-    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
     const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-compose-state-"));
     const configPath = path.join(deploymentRoot, "takcli-config.yaml");
     const runner = new HybridRunner();
@@ -1695,12 +1525,6 @@ describe("deploy integration", () => {
         configPath,
         "--target",
         "docker-compose",
-        "--ref",
-        "main",
-        "--repo-url",
-        repoDir,
-        "--cache-root",
-        cacheRoot,
         "--name",
         "tracked-compose",
         "--deployment-root",
@@ -1760,16 +1584,12 @@ describe("deploy integration", () => {
       imageTag: "latest",
       logsDir: path.join(deploymentRoot, "data", "logs"),
       profileNames: [],
-      ref: "main",
       registry: "docker.io/codehausau",
-      repoUrl: repoDir,
       target: "docker-compose"
     });
   });
 
   it("prints a deployment wait message while compose startup is in progress", async () => {
-    const repoDir = await createFakeTakServerRepo();
-    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
     const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-compose-progress-"));
     const runner = new HybridRunner();
     const io = createMemoryIo();
@@ -1779,12 +1599,6 @@ describe("deploy integration", () => {
         "deploy",
         "--target",
         "docker-compose",
-        "--ref",
-        "main",
-        "--repo-url",
-        repoDir,
-        "--cache-root",
-        cacheRoot,
         "--name",
         "progress-compose",
         "--deployment-root",
@@ -1829,9 +1643,7 @@ describe("deploy integration", () => {
     expect(io.readStdout()).toContain("Starting Docker Compose deployment...");
   });
 
-  it("reuses an existing clone cache for repeat deploys", async () => {
-    const repoDir = await createFakeTakServerRepo();
-    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
+  it("does not invoke git cloning even across repeat deploys", async () => {
     const firstRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-first-"));
     const secondRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-second-"));
     const runner = new HybridRunner();
@@ -1840,12 +1652,6 @@ describe("deploy integration", () => {
       "deploy",
       "--target",
       "docker-compose",
-      "--ref",
-      "main",
-      "--repo-url",
-      repoDir,
-      "--cache-root",
-      cacheRoot,
       "--registry",
       "docker.io/codehausau",
       "--image-tag",
@@ -1913,6 +1719,6 @@ describe("deploy integration", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(runner.invocations.filter((invocation) => invocation.startsWith("git clone "))).toHaveLength(1);
+    expect(runner.invocations.filter((invocation) => invocation.startsWith("git clone "))).toHaveLength(0);
   });
 });

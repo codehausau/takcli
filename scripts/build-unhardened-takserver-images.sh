@@ -301,7 +301,6 @@ rm -rf "$CONTEXT_DIR"
 mkdir -p "$DOCKER_DIR" "$DB_UTILS_DIR" "$UTILS_DIR" "$TAK_DIR/data/certs" "$TAK_DIR/data/logs" "$TAK_DIR/certs/files"
 
 cp "$SRC_DIR/takserver-core/docker/full/Dockerfile.takserver" "$DOCKER_DIR/Dockerfile.takserver"
-cp "$SRC_DIR/takserver-schemamanager/docker/Dockerfile.takserver-db" "$DOCKER_DIR/Dockerfile.takserver-db"
 
 copy_directory_contents "$SRC_DIR/takserver-core/scripts" "$TAK_DIR"
 
@@ -325,10 +324,31 @@ printf '%s\n' "$TAG" > "$TAK_DIR/version.txt"
 
 chmod +x "$TAK_DIR/docker_entrypoint.sh" "$TAK_DIR/configureInDocker.sh" "$DB_UTILS_DIR/configureInDocker.sh"
 
+cat > "$DOCKER_DIR/Dockerfile.postgres15-postgis3" <<'EOF'
+FROM postgres:15.1
+
+# Based on TAK Server's postgres15/postgis3 base image intent, but updated to
+# install Java from currently available Debian packages instead of the old
+# stretch-backports repo that now returns 404s.
+RUN apt-get update && apt-get install -y postgresql-15-postgis-3 openjdk-17-jdk
+EOF
+
+cat > "$DOCKER_DIR/Dockerfile.takserver-db" <<'EOF'
+FROM postgres:15.1
+
+RUN apt-get update && apt install -y postgresql-15-postgis-3 openjdk-17-jdk
+
+COPY tak /opt/tak
+
+ENTRYPOINT ["/opt/tak/db-utils/configureInDocker.sh"]
+EOF
+
+POSTGIS_BASE_IMAGE="${IMAGE_PREFIX%/}/postgres15-postgis3:${TAG}"
 SERVER_IMAGE="${IMAGE_PREFIX%/}/takserver-full:${TAG}"
 DB_IMAGE="${IMAGE_PREFIX%/}/takserver-db:${TAG}"
 
 printf 'Assembled Docker context at %s\n' "$CONTEXT_DIR"
+printf 'PostGIS base image: %s\n' "$POSTGIS_BASE_IMAGE"
 printf 'Server image: %s\n' "$SERVER_IMAGE"
 printf 'Database image: %s\n' "$DB_IMAGE"
 
@@ -342,15 +362,18 @@ if [[ "$PUSH" -eq 0 ]] && is_multi_platform "$PLATFORMS" && [[ "$CLEANUP_WORKSPA
 fi
 
 if [[ "$TAG_LATEST" -eq 1 ]]; then
+  POSTGIS_BASE_IMAGE_LATEST="${IMAGE_PREFIX%/}/postgres15-postgis3:latest"
   SERVER_IMAGE_LATEST="${IMAGE_PREFIX%/}/takserver-full:latest"
   DB_IMAGE_LATEST="${IMAGE_PREFIX%/}/takserver-db:latest"
 fi
 
 ensure_buildx
 
+POSTGIS_BASE_ARCHIVE="$WORKSPACE/postgres15-postgis3-${TAG}.oci.tar"
 SERVER_ARCHIVE="$WORKSPACE/takserver-full-${TAG}.oci.tar"
 DB_ARCHIVE="$WORKSPACE/takserver-db-${TAG}.oci.tar"
 
+build_image "$DOCKER_DIR/Dockerfile.postgres15-postgis3" "$POSTGIS_BASE_IMAGE" "${POSTGIS_BASE_IMAGE_LATEST:-}" "$POSTGIS_BASE_ARCHIVE"
 build_image "$DOCKER_DIR/Dockerfile.takserver" "$SERVER_IMAGE" "${SERVER_IMAGE_LATEST:-}" "$SERVER_ARCHIVE"
 build_image "$DOCKER_DIR/Dockerfile.takserver-db" "$DB_IMAGE" "${DB_IMAGE_LATEST:-}" "$DB_ARCHIVE"
 
@@ -358,6 +381,7 @@ if [[ "$PUSH" -eq 1 ]]; then
   printf 'Pushed multi-platform images for %s\n' "$PLATFORMS"
 elif is_multi_platform "$PLATFORMS"; then
   printf 'Exported multi-platform OCI archives:\n'
+  printf '  %s\n' "$POSTGIS_BASE_ARCHIVE"
   printf '  %s\n' "$SERVER_ARCHIVE"
   printf '  %s\n' "$DB_ARCHIVE"
   printf 'Workspace preserved at %s\n' "$WORKSPACE"

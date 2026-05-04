@@ -12,13 +12,13 @@ const trackedDeploymentSchema = z.object({
   createdAt: z.string(),
   dataDir: z.string(),
   deploymentRoot: z.string(),
-  gitCommit: z.string(),
+  gitCommit: z.string().optional(),
   imageTag: z.string(),
   logsDir: z.string(),
   profileNames: z.array(z.string()).default([]),
-  ref: z.string(),
   registry: z.string(),
-  repoUrl: z.string(),
+  ref: z.string().optional(),
+  repoUrl: z.string().optional(),
   target: z.enum(["docker-compose", "kubernetes"]),
   compose: z
     .object({
