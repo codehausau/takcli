@@ -324,7 +324,7 @@ export async function prepareKubernetesWorkspace(options: {
 }): Promise<KubernetesWorkspace> {
   await mkdir(options.request.deploymentRoot, { recursive: true });
 
-  const images = createDeployImages(options.request.registry, options.request.imageTag);
+  const images = createDeployImages(options.request.registry, options.request.imageTag, options.request.dbImage);
   const manifestPath = path.join(options.request.deploymentRoot, "kubernetes.yaml");
   const deploymentMetadataPath = path.join(options.request.deploymentRoot, "takcli-deployment.yaml");
   const namespace = getKubernetesNamespace(options.request);

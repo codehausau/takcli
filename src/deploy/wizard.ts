@@ -9,7 +9,7 @@ import { CliError, type IO } from "../cli/runtime.js";
 import { loadConfig, saveConfig } from "../core/config-store.js";
 import { configSchema, profileSchema } from "../core/schema.js";
 import { prepareComposeWorkspace } from "./compose.js";
-import { createDeployImages, inferImageTag } from "./images.js";
+import { createDeployImages, DEFAULT_DB_IMAGE, inferImageTag } from "./images.js";
 import { prepareKubernetesWorkspace } from "./kubernetes.js";
 import { ensureTakServerClone, getDefaultDeploymentRoot } from "./repo.js";
 import { loadDeploymentState, saveDeploymentState, type TrackedDeployment } from "./state.js";
@@ -694,7 +694,7 @@ async function runWithDeploymentFeedback<T>(
 }
 
 function buildPlanLines(request: DeployRequest, gitCommit: string): string[] {
-  const images = createDeployImages(request.registry, request.imageTag);
+  const images = createDeployImages(request.registry, request.imageTag, request.dbImage);
   const executionLine = request.dryRun
     ? "Execution: dry-run (workspace generation only)"
     : request.target === "docker-compose"
@@ -788,6 +788,7 @@ export async function runDeployWizard(
     "Docker image tag",
     defaultImageTagForRef(ref)
   );
+  const dbImage = options.dbImage ?? DEFAULT_DB_IMAGE;
   let webtakUser = await resolveBootstrapWebTakUser(io, options, services.prompt, target);
   if (webtakUser && webtakUser.password === "") {
     const webtakUsername = webtakUser.username;
@@ -813,6 +814,7 @@ export async function runDeployWizard(
     certsDir,
     cacheRoot: options.cacheRoot ? normalizePath(options.cacheRoot) : undefined,
     dataDir,
+    dbImage,
     deploymentName,
     deploymentRoot,
     dryRun: Boolean(options.dryRun),
