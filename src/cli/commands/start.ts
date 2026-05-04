@@ -358,7 +358,7 @@ export function createStartCommand(io: IO): Command {
           });
           const dataset = await loadReplayDataset(replayPath, options.source);
           const startIndex = resolveReplayStartIndex(dataset, options.startFrom);
-          const interactive = !Boolean(options.json) && canUseInteractiveControls();
+          const interactive = !options.json && canUseInteractiveControls();
           let lastRendered = "";
           const telemetry = createReplayTelemetryPublisher({
             dataset,
@@ -394,7 +394,7 @@ export function createStartCommand(io: IO): Command {
             timeoutMs
           });
 
-          if (!Boolean(options.json)) {
+          if (!options.json) {
             writeCommandTitle(io, "TAKCLI start replay", "Inject replay CoT into TAK for live consumers");
             writeSection(io, "Target", describeReplayTarget(profile));
             writeSection(io, "Dataset", [
@@ -432,7 +432,7 @@ export function createStartCommand(io: IO): Command {
               process.stdout.write("\r\x1b[2K");
             }
 
-            if (Boolean(options.json)) {
+            if (options.json) {
               writeJson(io, result);
               return;
             }

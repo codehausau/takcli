@@ -1283,7 +1283,7 @@ function buildReplayTimingCopy(sourceTime, displayTime, displayLabel) {
 function normalizeMaritimeLabel(value) {
   return String(value ?? "")
     .toLowerCase()
-    .replace(/\s+/g, " ")
+    .replace(/\\s+/g, " ")
     .trim();
 }
 
@@ -2249,7 +2249,7 @@ async function runTakQuery(kind) {
     return;
   }
 
-  if (kind === "cotId" && !/^\d+$/.test(value)) {
+  if (kind === "cotId" && !/^\\d+$/.test(value)) {
     el.queryResultMode.textContent = "Invalid CoT ID";
     el.queryResultNote.textContent = "CoT ID lookups require an integer value.";
     pushEvent("TAK query blocked", "CoT ID lookups require an integer value.", {
