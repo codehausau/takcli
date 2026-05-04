@@ -11,6 +11,8 @@ export async function collectStatusSummary(
   const dns = await probeDns(profile.host, timeoutMs);
   const apiUrl = new URL(profile.url.toString());
   apiUrl.port = String(profile.ports.api);
+  const enrollmentUrl = new URL(profile.url.toString());
+  enrollmentUrl.port = String(profile.ports.enrollment);
 
   const endpoints: EndpointStatus[] = [];
 
@@ -29,12 +31,20 @@ export async function collectStatusSummary(
   });
 
   for (const endpoint of [
-    { name: "enrollment", port: profile.ports.enrollment },
+    {
+      http:
+        profile.url.protocol === "https:" || profile.url.protocol === "http:"
+          ? await probeHttp(enrollmentUrl, timeoutMs, profile.tls)
+          : undefined,
+      name: "enrollment",
+      port: profile.ports.enrollment
+    },
     { name: "federation", port: profile.ports.federation }
   ] as const) {
     const tcp = await probeTcp(profile.host, endpoint.port, timeoutMs);
     const tls = await probeTls(profile.host, endpoint.port, timeoutMs, profile.tls);
     endpoints.push({
+      http: endpoint.http,
       name: endpoint.name,
       port: endpoint.port,
       tcp,
@@ -51,7 +61,9 @@ export async function collectStatusSummary(
   const requiredChecks = [
     dns.ok,
     ...endpoints.map((endpoint) => endpoint.tcp.ok),
-    apiHttp.ok
+    ...endpoints
+      .filter((endpoint) => endpoint.http)
+      .map((endpoint) => endpoint.http?.ok ?? false)
   ];
 
   const ok = requiredChecks.every(Boolean);

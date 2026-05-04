@@ -11,6 +11,7 @@ function createTrackedDeployment(
   const target = overrides.target ?? "docker-compose";
 
   return {
+    addons: [],
     certsDir: `/tmp/${name}/certs`,
     createdAt: "2026-03-20T00:00:00.000Z",
     dataDir: `/tmp/${name}/data`,

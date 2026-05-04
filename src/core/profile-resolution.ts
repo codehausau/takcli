@@ -31,6 +31,7 @@ export interface ResolvedProfile {
     certFile?: string;
     insecureSkipVerify: boolean;
     keyFile?: string;
+    keyPassphrase?: string;
   };
   url: URL;
 }
@@ -42,6 +43,27 @@ export function normalizeServerInput(input: string): string {
   }
 
   return `https://${trimmed}`;
+}
+
+function resolveHttpsPort(
+  explicitOverride: number | undefined,
+  profilePort: number | undefined,
+  url: URL,
+  fallback: number
+): number {
+  if (explicitOverride !== undefined) {
+    return explicitOverride;
+  }
+
+  if (profilePort !== undefined) {
+    return profilePort;
+  }
+
+  if (url.port) {
+    return Number(url.port);
+  }
+
+  return fallback;
 }
 
 export function resolveProfileTarget(
@@ -81,18 +103,20 @@ export function resolveProfileTarget(
     host: url.hostname,
     name: selectedName,
     ports: {
-      api:
-        options.apiPortOverride ??
-        (url.port ? Number(url.port) : selectedProfile?.ports.api ?? DEFAULT_PORTS.api),
+      api: resolveHttpsPort(options.apiPortOverride, selectedProfile?.ports.api, url, DEFAULT_PORTS.api),
       cot: options.cotPortOverride ?? selectedProfile?.ports.cot ?? DEFAULT_PORTS.cot,
-      enrollment:
-        options.enrollmentPortOverride ??
-        selectedProfile?.ports.enrollment ??
-        DEFAULT_PORTS.enrollment,
-      federation:
-        options.federationPortOverride ??
-        selectedProfile?.ports.federation ??
+      enrollment: resolveHttpsPort(
+        options.enrollmentPortOverride,
+        selectedProfile?.ports.enrollment,
+        url,
+        DEFAULT_PORTS.enrollment
+      ),
+      federation: resolveHttpsPort(
+        options.federationPortOverride,
+        selectedProfile?.ports.federation,
+        url,
         DEFAULT_PORTS.federation
+      )
     },
     server: normalizedServer,
     source: selectedProfile ? (options.profileName ? "named" : "current") : "ad-hoc",
@@ -101,7 +125,8 @@ export function resolveProfileTarget(
       certFile: selectedProfile?.tls.certFile,
       insecureSkipVerify:
         options.insecureSkipVerifyOverride ?? selectedProfile?.tls.insecureSkipVerify ?? false,
-      keyFile: selectedProfile?.tls.keyFile
+      keyFile: selectedProfile?.tls.keyFile,
+      keyPassphrase: selectedProfile?.tls.keyPassphrase
     },
     url
   };

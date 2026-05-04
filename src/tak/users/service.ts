@@ -92,7 +92,8 @@ function assertSuccessfulResponse(response: Awaited<ReturnType<typeof requestTak
 
 export async function listTakUsers(context: TakUsersContext) {
   const users = await requestTakJson<UsernameModel[]>(context.profile, context.timeoutMs, {
-    pathname: userManagementPath("/list-users")
+    pathname: userManagementPath("/list-users"),
+    portName: "enrollment"
   });
 
   return {
@@ -106,7 +107,8 @@ export async function listTakUsers(context: TakUsersContext) {
 
 export async function listTakGroupNames(context: TakUsersContext) {
   const groups = await requestTakJson<GroupNameModel[]>(context.profile, context.timeoutMs, {
-    pathname: userManagementPath("/list-groupnames")
+    pathname: userManagementPath("/list-groupnames"),
+    portName: "enrollment"
   });
 
   return {
@@ -120,7 +122,8 @@ export async function listTakGroupNames(context: TakUsersContext) {
 
 export async function getTakUserGroups(context: TakUsersContext, username: string) {
   const membership = await requestTakJson<TakUserGroupMembership>(context.profile, context.timeoutMs, {
-    pathname: userManagementPath(`/get-groups-for-user/${encodeURIComponent(username)}`)
+    pathname: userManagementPath(`/get-groups-for-user/${encodeURIComponent(username)}`),
+    portName: "enrollment"
   });
 
   return {
@@ -132,7 +135,8 @@ export async function getTakUserGroups(context: TakUsersContext, username: strin
 
 export async function getTakGroupMembers(context: TakUsersContext, groupname: string) {
   const members = await requestTakJson<TakGroupMembers>(context.profile, context.timeoutMs, {
-    pathname: userManagementPath(`/users-in-group/${encodeURIComponent(groupname)}`)
+    pathname: userManagementPath(`/users-in-group/${encodeURIComponent(groupname)}`),
+    portName: "enrollment"
   });
 
   return {
@@ -151,7 +155,8 @@ export async function createTakUser(context: TakUsersContext, input: UserMutatio
       password: input.password
     }),
     method: "POST",
-    pathname: userManagementPath("/new-user")
+    pathname: userManagementPath("/new-user"),
+    portName: "enrollment"
   });
   assertSuccessfulResponse(response);
 
@@ -169,7 +174,8 @@ export async function resetTakUserPassword(context: TakUsersContext, username: s
       username
     }),
     method: "PUT",
-    pathname: userManagementPath("/change-user-password")
+    pathname: userManagementPath("/change-user-password"),
+    portName: "enrollment"
   });
 
   assertSuccessfulResponse(response);
@@ -184,7 +190,8 @@ export async function resetTakUserPassword(context: TakUsersContext, username: s
 export async function deleteTakUser(context: TakUsersContext, username: string) {
   const response = await requestTak(context.profile, context.timeoutMs, {
     method: "DELETE",
-    pathname: userManagementPath(`/delete-user/${encodeURIComponent(username)}`)
+    pathname: userManagementPath(`/delete-user/${encodeURIComponent(username)}`),
+    portName: "enrollment"
   });
 
   assertSuccessfulResponse(response);
@@ -201,7 +208,8 @@ export async function setTakUserGroups(context: TakUsersContext, input: GroupMut
   const response = await requestTak(context.profile, context.timeoutMs, {
     body: JSON.stringify(payload),
     method: "PUT",
-    pathname: userManagementPath("/update-groups")
+    pathname: userManagementPath("/update-groups"),
+    portName: "enrollment"
   });
 
   assertSuccessfulResponse(response);

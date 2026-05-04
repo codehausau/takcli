@@ -1,11 +1,12 @@
 import { Buffer } from "node:buffer";
-import { readFileSync } from "node:fs";
-import type { IncomingHttpHeaders } from "node:http";
+import type { ClientRequest, IncomingHttpHeaders } from "node:http";
 import http from "node:http";
 import https from "node:https";
-import net from "node:net";
 
 import type { ResolvedProfile } from "../core/profile-resolution.js";
+import { buildTlsClientOptions, describeTlsClientError } from "./tls.js";
+
+export type TakHttpPortName = "api" | "enrollment" | "federation";
 
 export interface TakHttpRequestOptions {
   body?: string;
@@ -13,6 +14,7 @@ export interface TakHttpRequestOptions {
   method?: "DELETE" | "GET" | "POST" | "PUT";
   pathname: string;
   port?: number;
+  portName?: TakHttpPortName;
   searchParams?: Record<string, string | undefined>;
 }
 
@@ -22,15 +24,6 @@ export interface TakHttpResponse {
   statusCode?: number;
   statusMessage?: string;
   url: string;
-}
-
-function ensureValidTlsPair(profile: ResolvedProfile): void {
-  const hasCert = Boolean(profile.tls.certFile);
-  const hasKey = Boolean(profile.tls.keyFile);
-
-  if (hasCert !== hasKey) {
-    throw new Error("Both tls.certFile and tls.keyFile must be configured together.");
-  }
 }
 
 function buildAuthHeader(profile: ResolvedProfile): string | undefined {
@@ -56,11 +49,11 @@ export function buildTakUrl(
   profile: ResolvedProfile,
   pathname: string,
   searchParams: Record<string, string | undefined> = {},
-  port = profile.ports.api
+  port: number | TakHttpPortName = "api"
 ): URL {
   const url = new URL(profile.server);
   url.pathname = pathname;
-  url.port = String(port);
+  url.port = String(typeof port === "number" ? port : profile.ports[port]);
   url.search = "";
 
   for (const [key, value] of Object.entries(searchParams)) {
@@ -77,11 +70,11 @@ export async function requestTak(
   timeoutMs: number,
   options: TakHttpRequestOptions
 ): Promise<TakHttpResponse> {
-  ensureValidTlsPair(profile);
-
-  const url = buildTakUrl(profile, options.pathname, options.searchParams, options.port);
+  const port = options.port ?? options.portName ?? "api";
+  const url = buildTakUrl(profile, options.pathname, options.searchParams, port);
   const isHttps = url.protocol === "https:";
   const requestFn = isHttps ? https.request : http.request;
+  const tlsOptions = isHttps ? buildTlsClientOptions(url.hostname, profile.tls) : undefined;
   const headers: Record<string, string> = {
     Accept: "application/json",
     ...options.headers
@@ -100,40 +93,42 @@ export async function requestTak(
   }
 
   return await new Promise<TakHttpResponse>((resolve, reject) => {
-    const request = requestFn(
-      {
-        ca: profile.tls.caFile ? readFileSync(profile.tls.caFile) : undefined,
-        cert: profile.tls.certFile ? readFileSync(profile.tls.certFile) : undefined,
-        headers,
-        host: url.hostname,
-        key: profile.tls.keyFile ? readFileSync(profile.tls.keyFile) : undefined,
-        method: options.method ?? "GET",
-        path: `${url.pathname}${url.search}`,
-        port: url.port ? Number(url.port) : undefined,
-        rejectUnauthorized: isHttps ? !profile.tls.insecureSkipVerify : undefined,
-        servername: isHttps && !net.isIP(url.hostname) ? url.hostname : undefined
-      },
-      (response) => {
-        const chunks: Buffer[] = [];
-        response.on("data", (chunk: Buffer | string) => {
-          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-        });
-        response.on("end", () => {
-          clearTimeout(timer);
-          resolve({
-            body: Buffer.concat(chunks).toString("utf8"),
-            headers: response.headers,
-            statusCode: response.statusCode,
-            statusMessage: response.statusMessage,
-            url: url.toString()
-          });
-        });
-      }
-    );
-
+    let request: ClientRequest | undefined;
     const timer = setTimeout(() => {
-      request.destroy(new Error(`HTTP request timed out after ${timeoutMs}ms`));
+      request?.destroy(new Error(`HTTP request timed out after ${timeoutMs}ms`));
     }, timeoutMs);
+    try {
+      request = requestFn(
+        {
+          ...tlsOptions,
+          headers,
+          host: url.hostname,
+          method: options.method ?? "GET",
+          path: `${url.pathname}${url.search}`,
+          port: url.port ? Number(url.port) : undefined
+        },
+        (response) => {
+          const chunks: Buffer[] = [];
+          response.on("data", (chunk: Buffer | string) => {
+            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+          });
+          response.on("end", () => {
+            clearTimeout(timer);
+            resolve({
+              body: Buffer.concat(chunks).toString("utf8"),
+              headers: response.headers,
+              statusCode: response.statusCode,
+              statusMessage: response.statusMessage,
+              url: url.toString()
+            });
+          });
+        }
+      );
+    } catch (error) {
+      clearTimeout(timer);
+      reject(describeTlsClientError(error));
+      return;
+    }
 
     request.once("error", (error) => {
       clearTimeout(timer);

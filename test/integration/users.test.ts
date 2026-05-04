@@ -92,7 +92,25 @@ describe("users command integration", () => {
       }
     );
 
-    const server = https.createServer(
+    const apiServer = https.createServer(
+      {
+        cert: certs.cert,
+        key: certs.private
+      },
+      (_request, response) => {
+        response.writeHead(403, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({ message: "Use the secure admin port" }));
+      }
+    );
+    servers.push(apiServer);
+    await new Promise<void>((resolve) => apiServer.listen(0, "127.0.0.1", () => resolve()));
+    const apiAddress = apiServer.address();
+
+    if (!apiAddress || typeof apiAddress === "string") {
+      throw new Error("Expected a bound API address.");
+    }
+
+    const enrollmentServer = https.createServer(
       {
         cert: certs.cert,
         key: certs.private
@@ -246,12 +264,12 @@ describe("users command integration", () => {
         response.end(JSON.stringify({ message: `Unhandled route: ${request.method} ${url.pathname}` }));
       }
     );
-    servers.push(server);
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
-    const address = server.address();
+    servers.push(enrollmentServer);
+    await new Promise<void>((resolve) => enrollmentServer.listen(0, "127.0.0.1", () => resolve()));
+    const enrollmentAddress = enrollmentServer.address();
 
-    if (!address || typeof address === "string") {
-      throw new Error("Expected a bound address.");
+    if (!enrollmentAddress || typeof enrollmentAddress === "string") {
+      throw new Error("Expected a bound enrollment address.");
     }
 
     const baseDir = await mkdtemp(path.join(os.tmpdir(), "takcli-users-"));
@@ -264,9 +282,11 @@ describe("users command integration", () => {
         "add",
         "local",
         "--server",
-        `https://127.0.0.1:${address.port}`,
+        `https://127.0.0.1:${apiAddress.port}`,
         "--api-port",
-        String(address.port),
+        String(apiAddress.port),
+        "--enrollment-port",
+        String(enrollmentAddress.port),
         "--insecure",
         "--auth-user",
         "admin",

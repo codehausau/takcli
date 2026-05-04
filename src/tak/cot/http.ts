@@ -1,9 +1,10 @@
-import { readFileSync } from "node:fs";
+import type { ClientRequest } from "node:http";
 import http from "node:http";
 import https from "node:https";
-import net from "node:net";
 
 import type { ResolvedProfile } from "../../core/profile-resolution.js";
+import { buildTakUrl } from "../http.js";
+import { buildTlsClientOptions, describeTlsClientError } from "../tls.js";
 import type { UidSearchResult } from "./types.js";
 
 interface HttpTextResponse {
@@ -13,26 +14,24 @@ interface HttpTextResponse {
   url: string;
 }
 
-function ensureValidTlsPair(profile: ResolvedProfile): void {
-  const hasCert = Boolean(profile.tls.certFile);
-  const hasKey = Boolean(profile.tls.keyFile);
-
-  if (hasCert !== hasKey) {
-    throw new Error("Both tls.certFile and tls.keyFile must be configured together.");
-  }
+function getCotHttpPorts(profile: ResolvedProfile): number[] {
+  return [...new Set([profile.ports.enrollment, profile.ports.api])];
 }
 
-function buildApiUrl(profile: ResolvedProfile, pathname: string, searchParams: Record<string, string>): URL {
-  const url = new URL(profile.server);
-  url.pathname = pathname;
-  url.port = String(profile.ports.api);
-  url.search = "";
+function buildEndpointUrls(
+  profile: ResolvedProfile,
+  pathnames: string[],
+  searchParams: Record<string, string>
+): URL[] {
+  const urls: URL[] = [];
 
-  for (const [key, value] of Object.entries(searchParams)) {
-    url.searchParams.set(key, value);
+  for (const port of getCotHttpPorts(profile)) {
+    for (const pathname of pathnames) {
+      urls.push(buildTakUrl(profile, pathname, searchParams, port));
+    }
   }
 
-  return url;
+  return urls;
 }
 
 async function requestText(
@@ -40,44 +39,45 @@ async function requestText(
   profile: ResolvedProfile,
   timeoutMs: number
 ): Promise<HttpTextResponse> {
-  ensureValidTlsPair(profile);
-
   const isHttps = url.protocol === "https:";
   const requestFn = isHttps ? https.request : http.request;
+  const tlsOptions = isHttps ? buildTlsClientOptions(url.hostname, profile.tls) : undefined;
 
   return new Promise<HttpTextResponse>((resolve, reject) => {
-    const request = requestFn(
-      {
-        ca: profile.tls.caFile ? readFileSync(profile.tls.caFile) : undefined,
-        cert: profile.tls.certFile ? readFileSync(profile.tls.certFile) : undefined,
-        host: url.hostname,
-        key: profile.tls.keyFile ? readFileSync(profile.tls.keyFile) : undefined,
-        method: "GET",
-        path: `${url.pathname}${url.search}`,
-        port: url.port ? Number(url.port) : undefined,
-        rejectUnauthorized: isHttps ? !profile.tls.insecureSkipVerify : undefined,
-        servername: isHttps && !net.isIP(url.hostname) ? url.hostname : undefined
-      },
-      (response) => {
-        const chunks: Buffer[] = [];
-        response.on("data", (chunk: Buffer | string) => {
-          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-        });
-        response.on("end", () => {
-          clearTimeout(timer);
-          resolve({
-            body: Buffer.concat(chunks).toString("utf8"),
-            statusCode: response.statusCode,
-            statusMessage: response.statusMessage,
-            url: url.toString()
-          });
-        });
-      }
-    );
-
+    let request: ClientRequest | undefined;
     const timer = setTimeout(() => {
-      request.destroy(new Error(`HTTP request timed out after ${timeoutMs}ms`));
+      request?.destroy(new Error(`HTTP request timed out after ${timeoutMs}ms`));
     }, timeoutMs);
+    try {
+      request = requestFn(
+        {
+          ...tlsOptions,
+          host: url.hostname,
+          method: "GET",
+          path: `${url.pathname}${url.search}`,
+          port: url.port ? Number(url.port) : undefined
+        },
+        (response) => {
+          const chunks: Buffer[] = [];
+          response.on("data", (chunk: Buffer | string) => {
+            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+          });
+          response.on("end", () => {
+            clearTimeout(timer);
+            resolve({
+              body: Buffer.concat(chunks).toString("utf8"),
+              statusCode: response.statusCode,
+              statusMessage: response.statusMessage,
+              url: url.toString()
+            });
+          });
+        }
+      );
+    } catch (error) {
+      clearTimeout(timer);
+      reject(describeTlsClientError(error));
+      return;
+    }
 
     request.once("error", (error) => {
       clearTimeout(timer);
@@ -96,8 +96,7 @@ async function requestWithFallback(
   let lastResponse: HttpTextResponse | undefined;
   let lastError: Error | undefined;
 
-  for (const pathname of pathnames) {
-    const url = buildApiUrl(profile, pathname, searchParams);
+  for (const url of buildEndpointUrls(profile, pathnames, searchParams)) {
 
     try {
       const response = await requestText(url, profile, timeoutMs);
@@ -123,7 +122,9 @@ async function requestWithFallback(
   }
 
   throw new Error(
-    `TAK endpoint not found. Tried ${pathnames.join(", ")}${lastResponse ? ` (last response: HTTP ${lastResponse.statusCode ?? "unknown"})` : ""}.`
+    `TAK endpoint not found. Tried ${buildEndpointUrls(profile, pathnames, searchParams)
+      .map((url) => url.pathname + (url.port ? ` on ${url.port}` : ""))
+      .join(", ")}${lastResponse ? ` (last response: HTTP ${lastResponse.statusCode ?? "unknown"})` : ""}.`
   );
 }
 

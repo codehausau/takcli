@@ -15,6 +15,8 @@ Options:
   --tag <tag>                 Image tag to publish. If omitted, tries the exact git tag on HEAD.
   --image-prefix <prefix>     Registry/repository prefix.
                               Default: docker.io/codehausau
+  --platforms <list>          Comma-separated target platforms for docker buildx.
+                              Default: linux/amd64,linux/arm64
   --workspace <path>          Reuse a workspace directory instead of a temporary one.
   --push                      Push images after building them.
   --tag-latest                Also tag and optionally push :latest.
@@ -31,6 +33,7 @@ Examples:
   ./scripts/build-unhardened-takserver-images.sh \
     --tak-server-repo /path/to/tak-server \
     --tag 5.2-RELEASE-16 \
+    --platforms linux/amd64,linux/arm64 \
     --image-prefix docker.io/codehausau \
     --push \
     --tag-latest
@@ -80,8 +83,59 @@ resolve_default_tag() {
   return 1
 }
 
+normalize_platforms() {
+  printf '%s' "$1" | tr -d '[:space:]'
+}
+
+is_multi_platform() {
+  [[ "$1" == *,* ]]
+}
+
+ensure_buildx() {
+  if ! docker buildx version >/dev/null 2>&1; then
+    printf 'Missing required Docker Buildx support. Install or enable docker buildx before building.\n' >&2
+    exit 1
+  fi
+
+  if ! docker buildx inspect >/dev/null 2>&1; then
+    printf 'Unable to find an active docker buildx builder. Create one with `docker buildx create --use` and retry.\n' >&2
+    exit 1
+  fi
+
+  docker buildx inspect --bootstrap >/dev/null
+}
+
+build_image() {
+  local dockerfile_path="$1"
+  local primary_tag="$2"
+  local latest_tag="${3:-}"
+  local archive_path="${4:-}"
+  local -a cmd=(
+    docker buildx build
+    --platform "$PLATFORMS"
+    -f "$dockerfile_path"
+    -t "$primary_tag"
+  )
+
+  if [[ -n "$latest_tag" ]]; then
+    cmd+=(-t "$latest_tag")
+  fi
+
+  if [[ "$PUSH" -eq 1 ]]; then
+    cmd+=(--push)
+  elif is_multi_platform "$PLATFORMS"; then
+    cmd+=(--output "type=oci,dest=$archive_path")
+  else
+    cmd+=(--load)
+  fi
+
+  cmd+=("$CONTEXT_DIR")
+  "${cmd[@]}"
+}
+
 TAK_SERVER_REPO="/workspaces/tak/tak-server"
 IMAGE_PREFIX="docker.io/codehausau"
+PLATFORMS="linux/amd64,linux/arm64"
 WORKSPACE=""
 TAG=""
 PUSH=0
@@ -101,6 +155,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --image-prefix)
       IMAGE_PREFIX="$2"
+      shift 2
+      ;;
+    --platforms)
+      PLATFORMS="$2"
       shift 2
       ;;
     --workspace)
@@ -139,6 +197,13 @@ require_command git
 require_command docker
 require_command find
 require_command mktemp
+require_command tr
+
+PLATFORMS="$(normalize_platforms "$PLATFORMS")"
+if [[ -z "$PLATFORMS" ]]; then
+  printf 'Expected at least one target platform. Pass --platforms <platform[,platform...]>\n' >&2
+  exit 1
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENTRYPOINT_OVERLAY="$SCRIPT_DIR/assets/unhardened-takserver-entrypoint.sh"
@@ -272,24 +337,32 @@ if [[ "$ASSEMBLE_ONLY" -eq 1 ]]; then
   exit 0
 fi
 
-docker build -t "$SERVER_IMAGE" -f "$DOCKER_DIR/Dockerfile.takserver" "$CONTEXT_DIR"
-docker build -t "$DB_IMAGE" -f "$DOCKER_DIR/Dockerfile.takserver-db" "$CONTEXT_DIR"
+if [[ "$PUSH" -eq 0 ]] && is_multi_platform "$PLATFORMS" && [[ "$CLEANUP_WORKSPACE" -eq 1 ]]; then
+  CLEANUP_WORKSPACE=0
+fi
 
 if [[ "$TAG_LATEST" -eq 1 ]]; then
   SERVER_IMAGE_LATEST="${IMAGE_PREFIX%/}/takserver-full:latest"
   DB_IMAGE_LATEST="${IMAGE_PREFIX%/}/takserver-db:latest"
-  docker tag "$SERVER_IMAGE" "$SERVER_IMAGE_LATEST"
-  docker tag "$DB_IMAGE" "$DB_IMAGE_LATEST"
-  printf 'Tagged %s and %s\n' "$SERVER_IMAGE_LATEST" "$DB_IMAGE_LATEST"
 fi
 
+ensure_buildx
+
+SERVER_ARCHIVE="$WORKSPACE/takserver-full-${TAG}.oci.tar"
+DB_ARCHIVE="$WORKSPACE/takserver-db-${TAG}.oci.tar"
+
+build_image "$DOCKER_DIR/Dockerfile.takserver" "$SERVER_IMAGE" "${SERVER_IMAGE_LATEST:-}" "$SERVER_ARCHIVE"
+build_image "$DOCKER_DIR/Dockerfile.takserver-db" "$DB_IMAGE" "${DB_IMAGE_LATEST:-}" "$DB_ARCHIVE"
+
 if [[ "$PUSH" -eq 1 ]]; then
-  docker push "$SERVER_IMAGE"
-  docker push "$DB_IMAGE"
-  if [[ "$TAG_LATEST" -eq 1 ]]; then
-    docker push "${IMAGE_PREFIX%/}/takserver-full:latest"
-    docker push "${IMAGE_PREFIX%/}/takserver-db:latest"
-  fi
+  printf 'Pushed multi-platform images for %s\n' "$PLATFORMS"
+elif is_multi_platform "$PLATFORMS"; then
+  printf 'Exported multi-platform OCI archives:\n'
+  printf '  %s\n' "$SERVER_ARCHIVE"
+  printf '  %s\n' "$DB_ARCHIVE"
+  printf 'Workspace preserved at %s\n' "$WORKSPACE"
+else
+  printf 'Loaded single-platform images into the local Docker daemon for %s\n' "$PLATFORMS"
 fi
 
 printf 'Done.\n'

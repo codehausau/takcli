@@ -1,3 +1,4 @@
+import { generateKeyPairSync } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { access, mkdir, readFile, stat, writeFile } from "node:fs/promises";
@@ -12,7 +13,7 @@ import type { CliServices } from "../../src/cli/create-cli.js";
 import { CliError } from "../../src/cli/runtime.js";
 import { loadConfig } from "../../src/core/config-store.js";
 import { loadDeploymentState } from "../../src/deploy/state.js";
-import type { CommandRunner, DeployPrompt } from "../../src/deploy/types.js";
+import type { CommandRunner, DeployPrompt, DeployPromptChoice } from "../../src/deploy/types.js";
 import { createDefaultObserveServices } from "../../src/observe/service.js";
 
 const execFileAsync = promisify(execFile);
@@ -161,9 +162,22 @@ function createServicesWithPrompt(prompt: DeployPrompt, runner: CommandRunner): 
 }
 
 class RecordingPrompt implements DeployPrompt {
+  readonly confirmCalls: string[] = [];
   readonly inputCalls: Array<{ message: string; secret?: boolean }> = [];
+  readonly selectCalls: string[] = [];
 
-  async confirm() {
+  constructor(
+    private readonly options: {
+      adsbEnabled?: boolean;
+      adsbSource?: "geo" | "mil";
+    } = {}
+  ) {}
+
+  async confirm(options: { defaultValue?: boolean; message: string }) {
+    this.confirmCalls.push(options.message);
+    if (options.message === "Enable the ADS-B gateway sidecar?") {
+      return this.options.adsbEnabled ?? false;
+    }
     return true;
   }
 
@@ -172,6 +186,9 @@ class RecordingPrompt implements DeployPrompt {
 
     const defaults: Record<string, string> = {
       "Admin certificate password": "admin-pass",
+      "ADS-B distance": "25",
+      "ADS-B latitude": "60.3179",
+      "ADS-B longitude": "24.9496",
       "Admin certificate name": "admin",
       "Certificate authority name": "PromptCA",
       "Certificate authority password": "ca-pass",
@@ -196,13 +213,24 @@ class RecordingPrompt implements DeployPrompt {
     return defaults[options.message] ?? options.defaultValue ?? "value";
   }
 
-  async select() {
+  async select(options: {
+    choices: DeployPromptChoice[];
+    defaultValue?: string;
+    message: string;
+  }) {
+    this.selectCalls.push(options.message);
+    if (options.message === "Choose an ADS-B source profile") {
+      return this.options.adsbSource ?? "mil";
+    }
     return "docker-compose";
   }
 }
 
 class DefaultingPrompt implements DeployPrompt {
-  async confirm() {
+  async confirm(options: { defaultValue?: boolean; message: string }) {
+    if (options.message === "Enable the ADS-B gateway sidecar?") {
+      return false;
+    }
     return true;
   }
 
@@ -219,15 +247,26 @@ class RetryingPrompt implements DeployPrompt {
   readonly inputCalls: Array<{ message: string; secret?: boolean }> = [];
 
   private readonly confirms: boolean[];
+  private readonly adsbConfirms: boolean[];
+  private readonly selects: Record<string, string[]>;
   private readonly values: Record<string, string[]>;
 
   constructor(options?: {
+    adsbConfirms?: boolean[];
     confirms?: boolean[];
+    selects?: Record<string, string[]>;
     values?: Record<string, string[]>;
   }) {
     this.confirms = options?.confirms ? [...options.confirms] : [false, true];
+    this.adsbConfirms = options?.adsbConfirms ? [...options.adsbConfirms] : [];
+    this.selects = {
+      ...(options?.selects ?? {})
+    };
     this.values = {
       "Admin certificate password": ["admin-pass"],
+      "ADS-B distance": ["25"],
+      "ADS-B latitude": ["60.3179"],
+      "ADS-B longitude": ["24.9496"],
       "Admin certificate name": ["admin"],
       "Certificate authority name": ["PromptCA"],
       "Certificate authority password": ["short", "ca-pass"],
@@ -251,7 +290,10 @@ class RetryingPrompt implements DeployPrompt {
     };
   }
 
-  async confirm() {
+  async confirm(options: { defaultValue?: boolean; message: string }) {
+    if (options.message === "Enable the ADS-B gateway sidecar?") {
+      return this.adsbConfirms.shift() ?? false;
+    }
     return this.confirms.shift() ?? true;
   }
 
@@ -269,7 +311,11 @@ class RetryingPrompt implements DeployPrompt {
     return options.defaultValue ?? "value";
   }
 
-  async select() {
+  async select(options: { choices: DeployPromptChoice[]; defaultValue?: string; message: string }) {
+    const values = this.selects[options.message];
+    if (values && values.length > 0) {
+      return values.shift() as string;
+    }
     return "docker-compose";
   }
 }
@@ -389,6 +435,167 @@ describe("deploy integration", () => {
 
     const envStats = await stat(path.join(deploymentRoot, ".env"));
     expect(envStats.mode & 0o777).toBe(0o600);
+  });
+
+  it("renders ADS-B gateway assets when requested for a compose deployment", async () => {
+    const repoDir = await createFakeTakServerRepo();
+    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
+    const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-compose-adsb-"));
+    const runner = new HybridRunner();
+    const io = createMemoryIo();
+
+    const exitCode = await runCli(
+      [
+        "deploy",
+        "--target",
+        "docker-compose",
+        "--ref",
+        "main",
+        "--repo-url",
+        repoDir,
+        "--cache-root",
+        cacheRoot,
+        "--name",
+        "demo-adsb",
+        "--deployment-root",
+        deploymentRoot,
+        "--data-dir",
+        path.join(deploymentRoot, "data"),
+        "--logs-dir",
+        path.join(deploymentRoot, "data", "logs"),
+        "--certs-dir",
+        path.join(deploymentRoot, "data", "certs"),
+        "--registry",
+        "docker.io/codehausau",
+        "--image-tag",
+        "main",
+        "--postgres-password",
+        "postgres-pass",
+        "--ca-name",
+        "DemoCA",
+        "--ca-pass",
+        "ca-pass",
+        "--state",
+        "ACT",
+        "--city",
+        "Canberra",
+        "--organization",
+        "CodeHaus",
+        "--organizational-unit",
+        "Ops",
+        "--takserver-cert-pass",
+        "tak-pass",
+        "--admin-cert-name",
+        "admin",
+        "--admin-cert-pass",
+        "admin-pass",
+        "--with-adsb",
+        "--adsb-feed-url",
+        "https://example.invalid/adsb-feed",
+        "--yes",
+        "--dry-run",
+        "--json"
+      ],
+      io.io,
+      createServices(runner)
+    );
+
+    expect(exitCode).toBe(0);
+
+    const composeFile = await readFile(path.join(deploymentRoot, "docker-compose.yml"), "utf8");
+    expect(composeFile).toContain("tak-adsb-gateway:");
+    expect(composeFile).toContain("context: ./ads-b");
+    expect(composeFile).toContain("depends_on:");
+    expect(composeFile).toContain("- takserver");
+
+    const adsbDockerfile = await readFile(path.join(deploymentRoot, "ads-b", "Dockerfile"), "utf8");
+    expect(adsbDockerfile).toContain("FROM python:3.11-slim");
+    expect(adsbDockerfile).toContain("adsbcot[with_pymodes]");
+
+    const adsbConfig = await readFile(path.join(deploymentRoot, "ads-b", "adsbcot.ini"), "utf8");
+    expect(adsbConfig).toContain("FEED_URL = https://example.invalid/adsb-feed");
+    expect(adsbConfig).toContain("PYTAK_TLS_CLIENT_CERT = /etc/adsbcot/certs/admin.pem");
+    expect(adsbConfig).toContain("PYTAK_TLS_CLIENT_CAFILE = /etc/adsbcot/certs/root-ca.pem");
+    expect(adsbConfig).toContain("Acceptable use summary for adsb.fi public endpoints");
+
+    const adsbConfigStats = await stat(path.join(deploymentRoot, "ads-b", "adsbcot.ini"));
+    expect(adsbConfigStats.mode & 0o777).toBe(0o600);
+  });
+
+  it("builds a geographic adsb.fi v3 feed URL when ADS-B geo mode is selected", async () => {
+    const repoDir = await createFakeTakServerRepo();
+    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
+    const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-compose-adsb-geo-"));
+    const runner = new HybridRunner();
+    const io = createMemoryIo();
+
+    const exitCode = await runCli(
+      [
+        "deploy",
+        "--target",
+        "docker-compose",
+        "--ref",
+        "main",
+        "--repo-url",
+        repoDir,
+        "--cache-root",
+        cacheRoot,
+        "--name",
+        "demo-adsb-geo",
+        "--deployment-root",
+        deploymentRoot,
+        "--data-dir",
+        path.join(deploymentRoot, "data"),
+        "--logs-dir",
+        path.join(deploymentRoot, "data", "logs"),
+        "--certs-dir",
+        path.join(deploymentRoot, "data", "certs"),
+        "--registry",
+        "docker.io/codehausau",
+        "--image-tag",
+        "main",
+        "--postgres-password",
+        "postgres-pass",
+        "--ca-name",
+        "DemoCA",
+        "--ca-pass",
+        "ca-pass",
+        "--state",
+        "ACT",
+        "--city",
+        "Canberra",
+        "--organization",
+        "CodeHaus",
+        "--organizational-unit",
+        "Ops",
+        "--takserver-cert-pass",
+        "tak-pass",
+        "--admin-cert-name",
+        "admin",
+        "--admin-cert-pass",
+        "admin-pass",
+        "--with-adsb",
+        "--adsb-source",
+        "geo",
+        "--adsb-lat",
+        "60.3179",
+        "--adsb-lon",
+        "24.9496",
+        "--adsb-dist-nm",
+        "25",
+        "--yes",
+        "--dry-run",
+        "--json"
+      ],
+      io.io,
+      createServices(runner)
+    );
+
+    expect(exitCode).toBe(0);
+
+    const adsbConfig = await readFile(path.join(deploymentRoot, "ads-b", "adsbcot.ini"), "utf8");
+    expect(adsbConfig).toContain("Source profile: geographic area centered at 60.3179, 24.9496 within 25 NM.");
+    expect(adsbConfig).toContain("FEED_URL = https://opendata.adsb.fi/api/v3/lat/60.3179/lon/24.9496/dist/25");
   });
 
   it("rejects certificate passwords shorter than six characters before cloning", async () => {
@@ -758,6 +965,60 @@ describe("deploy integration", () => {
         expect.objectContaining({ message: "Initial WebTAK password", secret: true })
       ])
     );
+  });
+
+  it("can enable ADS-B interactively and prompt for geographic source details", async () => {
+    const repoDir = await createFakeTakServerRepo();
+    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
+    const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-prompt-adsb-"));
+    const dataDir = path.join(deploymentRoot, "data");
+    const logsDir = path.join(dataDir, "logs");
+    const certsDir = path.join(dataDir, "certs");
+    const runner = new HybridRunner();
+    const prompt = new RecordingPrompt({
+      adsbEnabled: true,
+      adsbSource: "geo"
+    });
+    const io = createMemoryIo();
+
+    const exitCode = await runCli(
+      [
+        "deploy",
+        "--target",
+        "docker-compose",
+        "--repo-url",
+        repoDir,
+        "--cache-root",
+        cacheRoot,
+        "--name",
+        "prompt-adsb",
+        "--deployment-root",
+        deploymentRoot,
+        "--data-dir",
+        dataDir,
+        "--logs-dir",
+        logsDir,
+        "--certs-dir",
+        certsDir,
+        "--dry-run"
+      ],
+      io.io,
+      createServicesWithPrompt(prompt, runner)
+    );
+
+    expect(exitCode).toBe(0);
+    expect(prompt.confirmCalls).toContain("Enable the ADS-B gateway sidecar?");
+    expect(prompt.selectCalls).toContain("Choose an ADS-B source profile");
+    expect(prompt.inputCalls).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ message: "ADS-B latitude" }),
+        expect.objectContaining({ message: "ADS-B longitude" }),
+        expect.objectContaining({ message: "ADS-B distance" })
+      ])
+    );
+
+    const adsbConfig = await readFile(path.join(deploymentRoot, "ads-b", "adsbcot.ini"), "utf8");
+    expect(adsbConfig).toContain("FEED_URL = https://opendata.adsb.fi/api/v3/lat/60.3179/lon/24.9496/dist/25");
   });
 
   it("re-prompts certificate passwords after validation failures", async () => {
@@ -1159,6 +1420,7 @@ describe("deploy integration", () => {
     const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
     const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-compose-profiles-"));
     const configPath = path.join(deploymentRoot, "takcli-config.yaml");
+    const certsFilesDir = path.join(deploymentRoot, "data", "certs", "files");
     const runner = new HybridRunner();
     const prompt = new RetryingPrompt({
       confirms: [false, true, true, true],
@@ -1167,6 +1429,22 @@ describe("deploy integration", () => {
       }
     });
     const io = createMemoryIo();
+    const encryptedPrivateKey = generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      privateKeyEncoding: {
+        cipher: "aes-256-cbc",
+        format: "pem",
+        passphrase: "admin-pass",
+        type: "pkcs8"
+      },
+      publicKeyEncoding: {
+        format: "pem",
+        type: "spki"
+      }
+    }).privateKey;
+
+    await mkdir(certsFilesDir, { recursive: true });
+    await writeFile(path.join(certsFilesDir, "admin.key"), encryptedPrivateKey, "utf8");
 
     const exitCode = await runCli(
       [
@@ -1216,7 +1494,112 @@ describe("deploy integration", () => {
         caFile: path.join(deploymentRoot, "data", "certs", "files", "root-ca.pem"),
         certFile: path.join(deploymentRoot, "data", "certs", "files", "admin.pem"),
         insecureSkipVerify: true,
-        keyFile: path.join(deploymentRoot, "data", "certs", "files", "admin.key")
+        keyFile: path.join(deploymentRoot, "data", "certs", "files", "admin.unencrypted.key")
+      }
+    });
+    await expect(access(path.join(certsFilesDir, "admin.unencrypted.key"))).resolves.toBeUndefined();
+    await expect(readFile(path.join(certsFilesDir, "admin.unencrypted.key"), "utf8")).resolves.toContain(
+      "BEGIN PRIVATE KEY"
+    );
+    expect(io.readStdout()).toContain("Saved TAKCLI profiles");
+  });
+
+  it("can save compose deployments into TAKCLI profiles during non-interactive deploys", async () => {
+    const repoDir = await createFakeTakServerRepo();
+    const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-deploy-cache-"));
+    const deploymentRoot = await mkdtemp(path.join(os.tmpdir(), "takcli-compose-profiles-"));
+    const configPath = path.join(deploymentRoot, "takcli-config.yaml");
+    const certsFilesDir = path.join(deploymentRoot, "data", "certs", "files");
+    const runner = new HybridRunner();
+    const io = createMemoryIo();
+    const encryptedPrivateKey = generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      privateKeyEncoding: {
+        cipher: "aes-256-cbc",
+        format: "pem",
+        passphrase: "admin-pass",
+        type: "pkcs8"
+      },
+      publicKeyEncoding: {
+        format: "pem",
+        type: "spki"
+      }
+    }).privateKey;
+
+    await mkdir(certsFilesDir, { recursive: true });
+    await writeFile(path.join(certsFilesDir, "admin.key"), encryptedPrivateKey, "utf8");
+
+    const exitCode = await runCli(
+      [
+        "deploy",
+        "--config",
+        configPath,
+        "--target",
+        "docker-compose",
+        "--ref",
+        "main",
+        "--repo-url",
+        repoDir,
+        "--cache-root",
+        cacheRoot,
+        "--name",
+        "noninteractive-compose",
+        "--deployment-root",
+        deploymentRoot,
+        "--data-dir",
+        path.join(deploymentRoot, "data"),
+        "--logs-dir",
+        path.join(deploymentRoot, "data", "logs"),
+        "--certs-dir",
+        path.join(deploymentRoot, "data", "certs"),
+        "--registry",
+        "docker.io/codehausau",
+        "--image-tag",
+        "latest",
+        "--postgres-password",
+        "postgres-pass",
+        "--ca-name",
+        "DemoCA",
+        "--ca-pass",
+        "ca-pass",
+        "--state",
+        "ACT",
+        "--city",
+        "Canberra",
+        "--organization",
+        "CodeHaus",
+        "--organizational-unit",
+        "Ops",
+        "--takserver-cert-pass",
+        "tak-pass",
+        "--admin-cert-name",
+        "admin",
+        "--admin-cert-pass",
+        "admin-pass",
+        "--save-profiles",
+        "--yes"
+      ],
+      io.io,
+      createServices(runner)
+    );
+
+    expect(exitCode).toBe(0);
+
+    const loaded = await loadConfig(configPath);
+    expect(loaded.config.currentProfile).toBe("noninteractive-compose");
+    expect(loaded.config.profiles["noninteractive-compose"]).toMatchObject({
+      server: "https://127.0.0.1:8446",
+      tls: {
+        insecureSkipVerify: true
+      }
+    });
+    expect(loaded.config.profiles["noninteractive-compose-admin"]).toMatchObject({
+      server: "https://127.0.0.1:8443",
+      tls: {
+        caFile: path.join(deploymentRoot, "data", "certs", "files", "root-ca.pem"),
+        certFile: path.join(deploymentRoot, "data", "certs", "files", "admin.pem"),
+        insecureSkipVerify: true,
+        keyFile: path.join(deploymentRoot, "data", "certs", "files", "admin.unencrypted.key")
       }
     });
     expect(io.readStdout()).toContain("Saved TAKCLI profiles");
@@ -1291,6 +1674,7 @@ describe("deploy integration", () => {
 
     expect(output.statePath).toBe(loaded.path);
     expect(tracked).toMatchObject({
+      addons: [],
       certsDir: path.join(deploymentRoot, "data", "certs"),
       compose: {
         composeFilePath: path.join(deploymentRoot, "docker-compose.yml"),

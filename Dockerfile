@@ -24,6 +24,8 @@ FROM gcr.io/distroless/nodejs22-debian12 AS runtime
 
 WORKDIR /app
 
+EXPOSE 3000
+
 COPY --from=prod-deps /app/package.json ./package.json
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist

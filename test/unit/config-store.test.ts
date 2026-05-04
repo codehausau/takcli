@@ -37,7 +37,10 @@ describe("config store", () => {
           },
           server: "https://127.0.0.1:8446",
           tls: {
-            insecureSkipVerify: true
+            certFile: "/tmp/admin.pem",
+            insecureSkipVerify: true,
+            keyFile: "/tmp/admin.key",
+            keyPassphrase: "change-me"
           }
         }
       },
@@ -48,5 +51,6 @@ describe("config store", () => {
     expect(loaded.exists).toBe(true);
     expect(loaded.config.currentProfile).toBe("local");
     expect(loaded.config.profiles.local.server).toBe("https://127.0.0.1:8446");
+    expect(loaded.config.profiles.local.tls.keyPassphrase).toBe("change-me");
   });
 });

@@ -23,6 +23,19 @@ check_env_var() {
 	fi
 }
 
+ensure_runtime_config_link() {
+    local source_path="$1"
+    local target_path="$2"
+
+    if [[ -L "$target_path" ]]; then
+        rm -f "$target_path"
+    elif [[ -e "$target_path" ]]; then
+        mv "$target_path" "${target_path}.runtime-orig"
+    fi
+
+    ln -s "$source_path" "$target_path"
+}
+
 kill() {
 	echo Please wait a moment. It may take serveral seconds to fully shut down TAKServer.
 
@@ -122,6 +135,8 @@ else
 	echo Using existing CoreConfig.xml.
 fi
 
+ensure_runtime_config_link "${CONFIG}" "${TR}/CoreConfig.xml"
+
 if [[ ! -f "${TAKIGNITECONFIG}" ]];then
 	echo Copying initial TAKIgniteConfig.xml
 	if [[ -f "${TR}/TAKIgniteConfig.xml" ]];then
@@ -133,6 +148,8 @@ if [[ ! -f "${TAKIGNITECONFIG}" ]];then
 else
 	echo Using existing TAKIgniteConfig.xml.
 fi
+
+ensure_runtime_config_link "${TAKIGNITECONFIG}" "${TR}/TAKIgniteConfig.xml"
 
 ln -s "${TR}/data/logs" "${TR}/logs"
 

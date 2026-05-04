@@ -7,6 +7,7 @@ import { z } from "zod";
 import { resolveConfigPath } from "../core/config-store.js";
 
 const trackedDeploymentSchema = z.object({
+  addons: z.array(z.enum(["ads-b"])).default([]),
   certsDir: z.string(),
   createdAt: z.string(),
   dataDir: z.string(),

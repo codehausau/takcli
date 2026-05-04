@@ -94,9 +94,21 @@ export function parseCotEventXml(xml: string): CotEventSummary {
 }
 
 export function buildCotEventXml(input: CotInjectInput, now = new Date()): string {
-  const time = now.toISOString();
-  const stale = new Date(now.getTime() + input.staleSeconds * 1000).toISOString();
+  const time = input.time ?? now.toISOString();
+  const start = input.start ?? time;
+  const stale = input.stale ?? new Date(now.getTime() + input.staleSeconds * 1000).toISOString();
   const detailParts: string[] = [];
+
+  if (input.course !== undefined || input.speed !== undefined) {
+    const trackAttributes: string[] = [];
+    if (input.course !== undefined) {
+      trackAttributes.push(`course="${input.course}"`);
+    }
+    if (input.speed !== undefined) {
+      trackAttributes.push(`speed="${input.speed}"`);
+    }
+    detailParts.push(`<track ${trackAttributes.join(" ")}/>`);
+  }
 
   if (input.callsign) {
     detailParts.push(`<contact callsign="${escapeXml(input.callsign)}"/>`);
@@ -109,7 +121,7 @@ export function buildCotEventXml(input: CotInjectInput, now = new Date()): strin
   const detail = detailParts.length > 0 ? `<detail>${detailParts.join("")}</detail>` : "";
 
   return [
-    `<event version="2.0" uid="${escapeXml(input.uid)}" type="${escapeXml(input.type)}" time="${time}" start="${time}" stale="${stale}" how="${escapeXml(input.how)}">`,
+    `<event version="2.0" uid="${escapeXml(input.uid)}" type="${escapeXml(input.type)}" time="${time}" start="${start}" stale="${stale}" how="${escapeXml(input.how)}">`,
     `<point lat="${input.lat}" lon="${input.lon}" hae="${input.hae}" ce="${input.ce}" le="${input.le}"/>`,
     detail,
     "</event>"

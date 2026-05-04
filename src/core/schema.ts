@@ -25,7 +25,8 @@ export const profileSchema = z.object({
       caFile: z.string().optional(),
       certFile: z.string().optional(),
       insecureSkipVerify: z.boolean().optional().default(false),
-      keyFile: z.string().optional()
+      keyFile: z.string().optional(),
+      keyPassphrase: z.string().optional()
     })
     .default({ insecureSkipVerify: false })
 });
