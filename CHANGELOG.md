@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.11.1](https://github.com/codehausau/takcli/compare/takcli-v0.11.0...takcli-v0.11.1) (2026-05-04)
+
+
+### Bug Fixes
+
+* align deploy with codehaus postgis image ([de216d3](https://github.com/codehausau/takcli/commit/de216d3cafc89f03f805bcce24ba3d058be49d50))
+* align deploy with codehaus postgis image ([b370f44](https://github.com/codehausau/takcli/commit/b370f44e98e6b2b27ba19dfaf4ea2591cea45ea8))
+
 ## [0.11.0](https://github.com/codehausau/takcli/compare/takcli-v0.10.0...takcli-v0.11.0) (2026-05-04)
 
 
