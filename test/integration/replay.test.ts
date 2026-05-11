@@ -102,6 +102,46 @@ async function writeReplayFixture(): Promise<string> {
   return filePath;
 }
 
+async function writeSparseReplayFixture(): Promise<string> {
+  const baseDir = await mkdtemp(path.join(os.tmpdir(), "takcli-replay-sparse-int-"));
+  const filePath = path.join(baseDir, "sparse-tracks.geojson");
+  await writeFile(
+    filePath,
+    JSON.stringify({
+      features: [
+        {
+          geometry: {
+            coordinates: [138.0, -34.0],
+            type: "Point"
+          },
+          properties: {
+            craftId: "cargo",
+            timestampIsoUtc: "2026-03-01T00:00:00Z",
+            type: "Cargo"
+          },
+          type: "Feature"
+        },
+        {
+          geometry: {
+            coordinates: [138.2, -33.8],
+            type: "Point"
+          },
+          properties: {
+            craftId: "cargo",
+            timestampIsoUtc: "2026-03-01T01:00:00Z",
+            type: "Cargo"
+          },
+          type: "Feature"
+        }
+      ],
+      type: "FeatureCollection"
+    }),
+    "utf8"
+  );
+
+  return filePath;
+}
+
 async function serveReplayFixture(filePath: string): Promise<{ close: () => Promise<void>; url: string }> {
   const payload = await readFile(filePath, "utf8");
   const server = http.createServer((_, res) => {
@@ -136,6 +176,47 @@ afterEach(() => {
 });
 
 describe("TAKCLI replay integration", () => {
+  it("describes replay interpolation without sending CoT", async () => {
+    const filePath = await writeSparseReplayFixture();
+    const configPath = await createAdHocConfigPath();
+    const io = createMemoryIo();
+    const exitCode = await runCli(
+      [
+        "replay",
+        "file",
+        "--config",
+        configPath,
+        filePath,
+        "--source",
+        "auto",
+        "--interpolate",
+        "30m",
+        "--describe",
+        "--json"
+      ],
+      io.io
+    );
+
+    expect(exitCode).toBe(0);
+    const output = JSON.parse(io.readStdout()) as {
+      dataset: {
+        interpolation?: {
+          generatedTrackPoints: number;
+          intervalMs: number;
+          originalTrackPoints: number;
+        };
+        trackPoints: number;
+      };
+    };
+
+    expect(output.dataset.trackPoints).toBe(3);
+    expect(output.dataset.interpolation).toEqual({
+      generatedTrackPoints: 1,
+      intervalMs: 30 * 60 * 1000,
+      originalTrackPoints: 2
+    });
+  });
+
   it("replays a GeoJSON track file into the CoT TLS stream", async () => {
     const certs = createCerts();
     const receivedFrames: string[] = [];
@@ -250,6 +331,114 @@ describe("TAKCLI replay integration", () => {
     expect(receivedFrames[2]).toContain('uid="replay-vessel-charlie"');
     expect(receivedFrames[0]).toContain("<track");
     expect(receivedFrames[0]).toContain("Source time: 2026-03-01T00:00:00.000Z");
+  });
+
+  it("can loop a replay file for a bounded number of passes", async () => {
+    const certs = createCerts();
+    const receivedFrames: string[] = [];
+
+    const server = tls.createServer(
+      {
+        cert: certs.cert,
+        key: certs.private
+      },
+      (socket) => {
+        let buffer = "";
+        let parsed = false;
+
+        const flushFrames = () => {
+          if (parsed) {
+            return;
+          }
+          parsed = true;
+
+          let working = buffer;
+          while (true) {
+            const endIndex = working.indexOf("</event>");
+            if (endIndex === -1) {
+              break;
+            }
+
+            const startIndex = working.indexOf("<event");
+            if (startIndex === -1 || startIndex > endIndex) {
+              break;
+            }
+
+            receivedFrames.push(working.slice(startIndex, endIndex + "</event>".length));
+            working = working.slice(endIndex + "</event>".length);
+          }
+        };
+
+        socket.on("data", (chunk: Buffer | string) => {
+          buffer += Buffer.isBuffer(chunk) ? chunk.toString("utf8") : chunk;
+        });
+        socket.on("end", flushFrames);
+        socket.on("close", flushFrames);
+      }
+    );
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Expected an IP address.");
+    }
+
+    const filePath = await writeReplayFixture();
+    const configPath = await createAdHocConfigPath();
+    const io = createMemoryIo();
+    const exitCode = await runCli(
+      [
+        "replay",
+        "file",
+        "--config",
+        configPath,
+        filePath,
+        "--source",
+        "auto",
+        "--speed",
+        "3600000",
+        "--loop-count",
+        "2",
+        "--loop-delay",
+        "1ms",
+        "--server",
+        "https://127.0.0.1:8446",
+        "--cot-port",
+        String(address.port),
+        "--insecure",
+        "--json"
+      ],
+      io.io
+    );
+
+    expect(exitCode).toBe(0);
+    const output = JSON.parse(io.readStdout()) as {
+      loop: boolean;
+      loopCount: number;
+      sentEvents: number;
+      state: string;
+    };
+    expect(output).toMatchObject({
+      loop: true,
+      loopCount: 2,
+      sentEvents: 6,
+      state: "completed"
+    });
+
+    for (let attempt = 0; attempt < 20 && receivedFrames.length < 6; attempt += 1) {
+      await delay(50);
+    }
+
+    expect(receivedFrames).toHaveLength(6);
+    expect(receivedFrames.map((frame) => frame.match(/uid="([^"]+)"/)?.[1])).toEqual([
+      "replay-vessel-alpha",
+      "replay-vessel-bravo",
+      "replay-vessel-charlie",
+      "replay-vessel-alpha",
+      "replay-vessel-bravo",
+      "replay-vessel-charlie"
+    ]);
   });
 
   it("starts replay injection through the operator workflow command", async () => {

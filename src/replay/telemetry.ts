@@ -47,6 +47,7 @@ function buildBaseSnapshot(
     },
     maxEvents,
     profile: toTelemetryProfile(profile),
+    currentLoop: 1,
     sentEvents: 0,
     speed,
     startedAt,
@@ -123,7 +124,8 @@ export function createReplayTelemetryPublisher(options: {
       const updatedAt = new Date().toISOString();
       await queueWrite({
         ...snapshot,
-        currentSourceTime: progress.trackPoint?.sourceTime ?? snapshot.currentSourceTime,
+        currentSourceTime: progress.effectiveSourceTime ?? progress.trackPoint?.sourceTime ?? snapshot.currentSourceTime,
+        currentLoop: progress.currentLoop,
         currentUid: progress.trackPoint?.uid ?? snapshot.currentUid,
         sentEvents: progress.sentEvents,
         state:

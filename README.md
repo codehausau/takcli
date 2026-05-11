@@ -504,36 +504,3 @@ takcli completion bash > ~/.local/share/bash-completion/completions/takcli
 takcli completion zsh > "${fpath[1]}/_takcli"
 takcli completion fish > ~/.config/fish/completions/takcli.fish
 ```
-
-## Release model
-
-This repository is designed for:
-- Conventional Commits
-- Release Please managed versioning and changelogs
-- npm publishing as `@codehaus-au/takcli`
-- Docker publishing to GitHub Container Registry
-
-## GitHub setup
-
-To get CI/CD and publishing working on `https://github.com/codehausau/takcli`, configure these GitHub Actions secrets:
-
-- `NPM_TOKEN`
-  - npm automation token with permission to publish `@codehaus-au/takcli`
-- `RELEASE_PLEASE_TOKEN`
-  - recommended when the repository or organization does not allow the default `GITHUB_TOKEN` to create pull requests
-  - if using a fine-grained PAT, grant repository access with:
-    - `Contents: Read and write`
-    - `Pull requests: Read and write`
-    - `Issues: Read and write`
-
-Workflow behavior:
-
-- pull requests run CI and semantic PR checks
-- pushes to `main` run Release Please
-- published GitHub releases run npm and GHCR publishing
-
-Notes:
-
-- `release-please.yml` prefers `RELEASE_PLEASE_TOKEN` and falls back to the built-in `GITHUB_TOKEN`
-- if your organization has disabled “GitHub Actions can create and approve pull requests”, Release Please will need `RELEASE_PLEASE_TOKEN`
-- GitHub currently warns that `googleapis/release-please-action@v4` still runs on the older Node 20 action runtime; this is an upstream action warning rather than a TAKCLI code issue

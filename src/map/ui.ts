@@ -20,8 +20,8 @@ export function buildMapHtml(title: string): string {
     <link rel="stylesheet" href="/app.css" />
   </head>
   <body>
-    <div class="shell">
-      <aside class="panel">
+    <div class="shell" id="app-shell">
+      <aside class="panel" id="map-sidebar">
         <header class="panel-header">
           <div class="eyebrow">TAKCLI Map Console</div>
           <h1>${escapedTitle}</h1>
@@ -334,18 +334,26 @@ export function buildMapHtml(title: string): string {
       </aside>
 
       <main class="map-stage">
-        <div class="map-toolbar">
-          <div>
-            <div class="toolbar-label">Map Guidance</div>
-            <div class="toolbar-copy">Click anywhere to stage an inject point. Replay playback shows one moving contact per vessel, with optional short trails and history lines.</div>
+        <div id="map" aria-label="TAK map"></div>
+        <div class="map-topbar">
+          <div class="map-brand">
+            <img src="/takcli-logo.png" alt="" class="takcli-logo" aria-hidden="true" />
+            <div class="map-brand-copy">
+              <div class="toolbar-label">Map Console</div>
+              <h1>TAKCLI</h1>
+            </div>
           </div>
           <div class="toolbar-stats">
             <span id="target-count">0 targets</span>
             <span id="target-state">Source pending</span>
             <span id="live-state">Live off</span>
+            <button id="toggle-sidebar" type="button" class="panel-toggle" aria-controls="map-sidebar" aria-expanded="true">Hide Sidebar</button>
           </div>
         </div>
-        <div id="map" aria-label="TAK map"></div>
+        <footer class="powered-footer">
+          <span>Powered by</span>
+          <img src="/codehaus.png" alt="Codehaus" />
+        </footer>
       </main>
     </div>
 
@@ -359,16 +367,16 @@ export function buildMapHtml(title: string): string {
 export const mapAppCss = `
 :root {
   color-scheme: dark;
-  --bg: #07131b;
-  --panel: rgba(9, 29, 39, 0.88);
-  --panel-strong: rgba(12, 38, 50, 0.96);
-  --line: rgba(127, 183, 197, 0.22);
-  --text: #ebf6f2;
-  --muted: #97b7bd;
+  --bg: #07100f;
+  --panel: rgba(9, 17, 16, 0.86);
+  --panel-strong: rgba(11, 24, 22, 0.96);
+  --line: rgba(142, 255, 212, 0.16);
+  --text: #edf7f3;
+  --muted: #a9c1b9;
   --accent: #7ee0c3;
   --accent-strong: #f1b768;
   --danger: #ff8e7f;
-  --shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+  --shadow: 0 18px 48px rgba(0, 0, 0, 0.42);
 }
 
 * {
@@ -383,9 +391,9 @@ body {
 
 body {
   background:
-    radial-gradient(circle at top left, rgba(126, 224, 195, 0.15), transparent 24rem),
-    radial-gradient(circle at bottom right, rgba(241, 183, 104, 0.12), transparent 28rem),
-    linear-gradient(180deg, #07131b 0%, #081018 100%);
+    radial-gradient(circle at top left, rgba(142, 255, 212, 0.12), transparent 24rem),
+    radial-gradient(circle at bottom right, rgba(241, 183, 104, 0.1), transparent 28rem),
+    linear-gradient(180deg, #07100f 0%, #081210 100%);
   color: var(--text);
   font-family: "IBM Plex Sans", "Avenir Next", "Segoe UI", sans-serif;
 }
@@ -457,7 +465,7 @@ input[type="range"] {
   flex-direction: column;
   gap: 1rem;
   padding: 1.1rem;
-  background: linear-gradient(180deg, rgba(5, 18, 26, 0.92), rgba(7, 20, 28, 0.82));
+  background: linear-gradient(180deg, rgba(5, 15, 14, 0.94), rgba(8, 18, 16, 0.86));
   backdrop-filter: blur(18px);
   border-right: 1px solid var(--line);
   overflow-y: auto;
@@ -515,8 +523,8 @@ h2 {
   align-items: center;
   padding: 0.9rem;
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px dashed rgba(241, 183, 104, 0.35);
+  background: rgba(238, 250, 245, 0.05);
+  border: 1px dashed rgba(142, 255, 212, 0.24);
 }
 
 .logo-image {
@@ -538,7 +546,8 @@ h2 {
 .card-title-row,
 .button-row,
 .field-row,
-.map-toolbar,
+.map-topbar,
+.map-brand,
 .toolbar-stats,
 .toggle-row,
 .checkbox-row {
@@ -547,7 +556,7 @@ h2 {
 }
 
 .card-title-row,
-.map-toolbar {
+.map-topbar {
   align-items: center;
   justify-content: space-between;
 }
@@ -557,6 +566,10 @@ h2 {
 .toolbar-stats,
 .toggle-row {
   flex-wrap: wrap;
+}
+
+.toolbar-stats {
+  align-items: center;
 }
 
 .checkbox-row {
@@ -582,6 +595,16 @@ h2 {
   background: rgba(255, 255, 255, 0.05);
   color: var(--muted);
   font-size: 0.88rem;
+}
+
+.panel-toggle {
+  min-height: 2.15rem;
+  padding: 0 0.7rem;
+  border-radius: 8px;
+  border-color: rgba(142, 255, 212, 0.18);
+  background: rgba(238, 250, 245, 0.08);
+  color: var(--text);
+  font-size: 0.78rem;
 }
 
 .meta-grid {
@@ -812,25 +835,95 @@ label span {
 }
 
 .map-stage {
-  display: grid;
-  grid-template-rows: auto 1fr;
+  position: relative;
   min-height: 0;
+  overflow: hidden;
 }
 
-.map-toolbar {
-  padding: 1rem 1.1rem;
-  border-bottom: 1px solid var(--line);
-  background: linear-gradient(180deg, rgba(7, 20, 28, 0.84), rgba(7, 20, 28, 0.55));
-  backdrop-filter: blur(14px);
+.shell.sidebar-hidden {
+  grid-template-columns: 1fr;
+}
+
+.shell.sidebar-hidden .panel {
+  display: none;
+}
+
+.map-topbar {
+  position: absolute;
+  z-index: 500;
+  top: 1rem;
+  left: 1rem;
+  right: 1rem;
+  padding: 0.9rem 1rem;
+  border-radius: 8px;
+  border: 1px solid rgba(142, 255, 212, 0.16);
+  background: rgba(9, 17, 16, 0.86);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(16px);
+}
+
+.map-brand {
+  min-width: 0;
+  align-items: center;
+}
+
+.takcli-logo {
+  width: 5.3rem;
+  height: 3.55rem;
+  flex: 0 0 auto;
+  border-radius: 6px;
+  object-fit: cover;
+  object-position: center;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.38);
+}
+
+.map-brand h1 {
+  font-family: "IBM Plex Sans", "Avenir Next", "Segoe UI", sans-serif;
+  margin-top: 0.12rem;
+  font-size: clamp(1.35rem, 2vw, 2rem);
+  white-space: nowrap;
 }
 
 #map {
-  min-height: 0;
+  position: absolute;
+  inset: 0;
   height: 100%;
 }
 
 .leaflet-container {
   background: #0a1721;
+}
+
+.leaflet-top {
+  top: 6.4rem;
+}
+
+.powered-footer {
+  position: absolute;
+  left: 1rem;
+  bottom: 1rem;
+  z-index: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 2.2rem;
+  padding: 0.28rem 0.5rem;
+  border: 1px solid rgba(142, 255, 212, 0.16);
+  border-radius: 6px;
+  background: rgba(9, 17, 16, 0.86);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(16px);
+  color: #94b5aa;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.powered-footer img {
+  display: block;
+  width: 84px;
+  height: auto;
+  max-height: 1.65rem;
 }
 
 .leaflet-popup-content-wrapper,
@@ -845,8 +938,57 @@ label span {
     grid-template-rows: auto 1fr;
   }
 
+  .shell.sidebar-hidden {
+    grid-template-rows: 1fr;
+  }
+
   .panel {
     max-height: 60vh;
+  }
+
+  .map-topbar {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 720px) {
+  .map-topbar {
+    top: 0.7rem;
+    left: 0.7rem;
+    right: 0.7rem;
+    gap: 0.6rem;
+    padding: 0.7rem;
+  }
+
+  .takcli-logo {
+    width: 3.65rem;
+    height: 2.45rem;
+  }
+
+  .map-brand {
+    gap: 0.45rem;
+  }
+
+  .map-brand h1 {
+    font-size: 1.08rem;
+  }
+
+  .leaflet-top {
+    top: 5rem;
+  }
+
+  .powered-footer {
+    left: 0.6rem;
+    bottom: max(0.6rem, env(safe-area-inset-bottom));
+    gap: 0.45rem;
+    min-height: 1.9rem;
+    padding: 0.22rem 0.4rem;
+    font-size: 0.62rem;
+  }
+
+  .powered-footer img {
+    width: 68px;
+    max-height: 1.35rem;
   }
 }
 `;
@@ -863,6 +1005,7 @@ const REPLAY_SPEED_OPTIONS = {
 };
 const REPLAY_TRAIL_POINTS = 8;
 const LIVE_TRACK_MAX_POINTS = 120;
+const LIVE_CONTACT_COLORS = ["#f1b768", "#7ee0c3", "#73b7ff", "#d99bff", "#ff9f80", "#87d1ff"];
 
 const state = {
   connectionStates: {
@@ -905,11 +1048,13 @@ const state = {
   replayTrailLayer: null,
   replayHistoryLayer: null,
   selectedMarker: null,
+  sidebarVisible: true,
   targetMarkers: new Map(),
   targetLayer: null
 };
 
 const el = {
+  appShell: document.querySelector("#app-shell"),
   eventCount: document.querySelector("#event-count"),
   eventFeed: document.querySelector("#event-feed"),
   injectCallsign: document.querySelector("#inject-callsign"),
@@ -971,6 +1116,7 @@ const el = {
   targetLookupNote: document.querySelector("#target-lookup-note"),
   targetState: document.querySelector("#target-state"),
   toggleLive: document.querySelector("#toggle-live"),
+  toggleSidebar: document.querySelector("#toggle-sidebar"),
   useMapCenter: document.querySelector("#use-map-center"),
   useSelectedPoint: document.querySelector("#use-selected-point")
 };
@@ -1179,6 +1325,29 @@ function pushEvent(label, copy, options = {}) {
   }
 }
 
+function setSidebarVisible(visible) {
+  state.sidebarVisible = visible;
+  el.appShell.classList.toggle("sidebar-hidden", !visible);
+  el.toggleSidebar.textContent = visible ? "Hide Sidebar" : "Show Sidebar";
+  el.toggleSidebar.setAttribute("aria-expanded", visible ? "true" : "false");
+
+  window.setTimeout(() => {
+    state.map?.invalidateSize();
+  }, 180);
+}
+
+function toggleSidebar() {
+  setSidebarVisible(!state.sidebarVisible);
+  pushEvent(
+    "Sidebar " + (state.sidebarVisible ? "shown" : "hidden"),
+    state.sidebarVisible ? "The map control sidebar is visible." : "The map has expanded to use the sidebar space.",
+    {
+      sourceLabel: "System",
+      sourceTone: "neutral"
+    }
+  );
+}
+
 function updateInjectFields(lat, lon, modeLabel) {
   el.injectLat.value = String(lat);
   el.injectLon.value = String(lon);
@@ -1198,6 +1367,17 @@ function createMarkerHtml(fill) {
     '<circle cx="13" cy="13" r="11" fill="' + fill + '" fill-opacity="0.18" stroke="' + fill + '" stroke-width="2" />' +
     '<circle cx="13" cy="13" r="4" fill="' + fill + '" />' +
     '</svg>';
+}
+
+function getStableColorForUid(uid) {
+  const source = String(uid ?? "");
+  let hash = 0;
+
+  for (let index = 0; index < source.length; index += 1) {
+    hash = ((hash << 5) - hash + source.charCodeAt(index)) | 0;
+  }
+
+  return LIVE_CONTACT_COLORS[Math.abs(hash) % LIVE_CONTACT_COLORS.length];
 }
 
 function inferAffiliation(cotType, fallbackAffiliation = "unknown") {
@@ -1221,6 +1401,9 @@ function inferDimension(cotType, fallbackDimension = "unknown") {
   const upper = String(cotType ?? "").toUpperCase();
   if (upper.includes("-S-")) {
     return "surface";
+  }
+  if (upper.includes("-U-")) {
+    return "subsurface";
   }
   if (upper.includes("-G-")) {
     return "ground";
@@ -1261,6 +1444,46 @@ function parseRemarksMetadata(remarks) {
 
 function getReplaySourceTime(remarks) {
   return parseRemarksMetadata(remarks)["source time"];
+}
+
+function buildVesselMetadataHtml(remarks) {
+  const metadata = parseRemarksMetadata(remarks);
+  const lines = [];
+
+  if (metadata.type) {
+    lines.push("Vessel type: " + metadata.type);
+  }
+
+  if (metadata.subtype) {
+    lines.push("Subtype: " + metadata.subtype);
+  }
+
+  if (metadata["craft id"]) {
+    lines.push("Craft ID: " + metadata["craft id"]);
+  }
+
+  if (metadata.length || metadata.beam || metadata.draught) {
+    lines.push(
+      "Dimensions: " +
+      [
+        metadata.length ? "L " + metadata.length : undefined,
+        metadata.beam ? "B " + metadata.beam : undefined,
+        metadata.draught ? "D " + metadata.draught : undefined
+      ].filter(Boolean).join(" / ")
+    );
+  }
+
+  return lines.length > 0 ? lines.join("<br />") + "<br />" : "";
+}
+
+function getReplaySourceTimeMs(remarks) {
+  const sourceTime = getReplaySourceTime(remarks);
+  if (!sourceTime) {
+    return undefined;
+  }
+
+  const parsed = Date.parse(sourceTime);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function buildReplayTimingHtml(sourceTime, displayTime, displayLabel) {
@@ -1417,6 +1640,10 @@ function build2525Glyph(dimension, accentColor) {
     return '<path d="M10 20C11.8 17.8 13.6 17.8 15.4 20C17.2 22.2 19 22.2 20.8 20C22.6 17.8 24.4 17.8 26.2 20" fill="none" stroke="' + accentColor + '" stroke-width="2.3" stroke-linecap="round"/>';
   }
 
+  if (dimension === "subsurface") {
+    return '<path d="M10 15C12.4 17.3 14.9 18.5 18 18.5C21.1 18.5 23.6 17.3 26 15" fill="none" stroke="' + accentColor + '" stroke-width="2.3" stroke-linecap="round"/><path d="M18 18.5V25" stroke="' + accentColor + '" stroke-width="2.1" stroke-linecap="round"/>';
+  }
+
   return '<circle cx="18" cy="18" r="4" fill="' + accentColor + '"/>';
 }
 
@@ -1456,6 +1683,26 @@ function buildSeaSurfaceSidc(affiliationCode, functionId) {
   return "S" + affiliationCode + "SP" + functionId + "-----";
 }
 
+function inferSubsurfaceFunctionId(options) {
+  const typeLabel = normalizeMaritimeLabel(options.maritimeType);
+  const subtypeLabel = normalizeMaritimeLabel(options.maritimeSubtype);
+  const combined = [subtypeLabel, typeLabel].filter(Boolean).join(" ");
+
+  if (combined.includes("sensor")) {
+    return "E-----";
+  }
+
+  if (combined.includes("seabed") || combined.includes("installation")) {
+    return "NBS---";
+  }
+
+  return undefined;
+}
+
+function buildSubsurfaceSidc(affiliationCode, functionId) {
+  return "S" + affiliationCode + "UP" + functionId + "-----";
+}
+
 function buildMilsymbolSidc(options) {
   const affiliation = inferAffiliation(options.cotType, options.affiliation ?? "unknown");
   const dimension = inferDimension(options.cotType, options.fallbackDimension ?? "ground");
@@ -1473,6 +1720,16 @@ function buildMilsymbolSidc(options) {
     }
   }
 
+  if (dimension === "subsurface") {
+    const functionId = inferSubsurfaceFunctionId({
+      maritimeSubtype,
+      maritimeType
+    });
+    if (functionId) {
+      return buildSubsurfaceSidc(affiliationCode, functionId);
+    }
+  }
+
   return "S" + affiliationCode + getDimensionSidcCode(dimension) + "P-----------";
 }
 
@@ -1487,7 +1744,7 @@ function buildMilsymbolIcon(options) {
       fill: true,
       frame: true,
       infoFields: false,
-      size: options.size ?? 32,
+      size: options.size ?? 28,
       standard: "2525e",
       uniqueDesignation: options.label
     });
@@ -1511,7 +1768,7 @@ function create2525MarkerHtml(options) {
   const dimension = inferDimension(options.cotType, options.fallbackDimension ?? "unknown");
   const palette = getAffiliationPalette(affiliation);
 
-  return '<svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+  return '<svg width="32" height="32" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">' +
     build2525Frame(affiliation, palette.stroke, palette.fill) +
     build2525Glyph(dimension, options.accentColor ?? palette.stroke) +
     '</svg>';
@@ -1536,8 +1793,8 @@ function buildMarkerIcon(options) {
     return L.divIcon({
       className: "",
       html: create2525MarkerHtml(options),
-      iconAnchor: [18, 18],
-      iconSize: [36, 36]
+      iconAnchor: [16, 16],
+      iconSize: [32, 32]
     });
   }
 
@@ -1601,6 +1858,7 @@ function renderTargets(result) {
     const latlng = L.latLng(target.lat, target.lon);
     const provenance = describeTargetProvenance(target, lookupSource);
     const replaySourceTime = getReplaySourceTime(target.remarks);
+    const vesselMetadataHtml = buildVesselMetadataHtml(target.remarks);
     const timingHtml = buildReplayTimingHtml(replaySourceTime, target.time, "TAK Event Time");
     bounds.push(latlng);
     const marker = L.marker(latlng, {
@@ -1616,6 +1874,7 @@ function renderTargets(result) {
     marker.bindPopup(
       "<strong>" + (target.callsign ?? target.uid) + "</strong><br />" +
       (target.type ?? "-") + "<br />" +
+      vesselMetadataHtml +
       formatCoordinate(target.lat) + ", " + formatCoordinate(target.lon) + "<br />" +
       timingHtml + "<br />" +
       "Source: " + provenance.popupLabel
@@ -1688,13 +1947,16 @@ function renderTargets(result) {
 function upsertLiveMarker(event) {
   const liveContact = state.liveContacts.get(event.uid);
   const marker = liveContact?.marker;
+  const accentColor = liveContact?.color ?? getStableColorForUid(event.uid);
   const latlng = L.latLng(event.point.lat, event.point.lon);
   const provenance = describeLiveEventProvenance(event);
   const replaySourceTime = getReplaySourceTime(event.remarks);
+  const vesselMetadataHtml = buildVesselMetadataHtml(event.remarks);
   const timingHtml = buildReplayTimingHtml(replaySourceTime, event.time ?? event.start, "TAK Event Time");
   const popup =
     "<strong>" + (event.callsign ?? event.uid) + "</strong><br />" +
     (event.type ?? "-") + "<br />" +
+    vesselMetadataHtml +
     formatCoordinate(event.point.lat) + ", " + formatCoordinate(event.point.lon) + "<br />" +
     timingHtml + "<br />" +
     "Source: " + provenance.popupLabel;
@@ -1703,7 +1965,7 @@ function upsertLiveMarker(event) {
     marker.setLatLng(latlng);
     marker.setPopupContent(popup);
     marker.setIcon(buildMarkerIcon({
-      accentColor: "#73b7ff",
+      accentColor,
       affiliation: "unknown",
       cotType: event.type,
       fallbackDimension: "ground",
@@ -1711,6 +1973,7 @@ function upsertLiveMarker(event) {
       remarks: event.remarks
     }));
     state.liveContacts.set(event.uid, {
+      color: accentColor,
       event,
       marker
     });
@@ -1719,7 +1982,7 @@ function upsertLiveMarker(event) {
 
   const created = L.marker(latlng, {
     icon: buildMarkerIcon({
-      accentColor: "#73b7ff",
+      accentColor,
       affiliation: "unknown",
       cotType: event.type,
       fallbackDimension: "ground",
@@ -1731,6 +1994,7 @@ function upsertLiveMarker(event) {
   created.addTo(state.liveMarkerLayer);
   state.liveMarkers.set(event.uid, created);
   state.liveContacts.set(event.uid, {
+    color: accentColor,
     event,
     marker: created
   });
@@ -1739,25 +2003,34 @@ function upsertLiveMarker(event) {
 function upsertLiveTrack(event) {
   const latlng = L.latLng(event.point.lat, event.point.lon);
   const existing = state.liveTracks.get(event.uid);
+  const color = existing?.color ?? state.liveContacts.get(event.uid)?.color ?? getStableColorForUid(event.uid);
+  const replaySourceTimeMs = getReplaySourceTimeMs(event.remarks);
 
   if (existing) {
-    const nextPoints = [...existing.points, latlng];
+    const loopedReplay =
+      replaySourceTimeMs !== undefined &&
+      existing.lastReplaySourceTimeMs !== undefined &&
+      replaySourceTimeMs + 1000 < existing.lastReplaySourceTimeMs;
+    const nextPoints = loopedReplay ? [latlng] : [...existing.points, latlng];
     if (nextPoints.length > LIVE_TRACK_MAX_POINTS) {
       nextPoints.splice(0, nextPoints.length - LIVE_TRACK_MAX_POINTS);
     }
 
+    existing.lastReplaySourceTimeMs = replaySourceTimeMs ?? existing.lastReplaySourceTimeMs;
     existing.points = nextPoints;
     existing.polyline.setLatLngs(nextPoints);
     return;
   }
 
   const polyline = L.polyline([latlng], {
-    color: "#73b7ff",
+    color,
     opacity: 0.68,
     weight: 2.5
   }).addTo(state.liveTrackLayer);
 
   state.liveTracks.set(event.uid, {
+    color,
+    lastReplaySourceTimeMs: replaySourceTimeMs,
     points: [latlng],
     polyline
   });
@@ -1781,7 +2054,7 @@ function rerenderLiveMarkerIcons() {
   for (const entry of state.liveContacts.values()) {
     entry.marker.setIcon(
       buildMarkerIcon({
-        accentColor: "#73b7ff",
+        accentColor: entry.color ?? getStableColorForUid(entry.event.uid),
         affiliation: "unknown",
         cotType: entry.event.type,
         fallbackDimension: "ground",
@@ -2654,8 +2927,9 @@ async function boot() {
     zoomControl: true
   }).setView([-35.0, 138.6], 9);
 
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    attribution: "&copy; OpenStreetMap contributors",
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
     maxZoom: 19
   }).addTo(state.map);
 
@@ -2718,6 +2992,9 @@ async function boot() {
   });
   el.toggleLive.addEventListener("click", () => {
     startLiveFeed();
+  });
+  el.toggleSidebar.addEventListener("click", () => {
+    toggleSidebar();
   });
   el.useMapCenter.addEventListener("click", () => {
     const center = state.map.getCenter();

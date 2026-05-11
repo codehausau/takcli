@@ -6,13 +6,15 @@ import { Command, Option } from "commander";
 import { loadConfig } from "../../core/config-store.js";
 import { resolveProfileTarget } from "../../core/profile-resolution.js";
 import { loadReplayDataset } from "../../replay/geojson.js";
+import { interpolateReplayDataset } from "../../replay/interpolation.js";
 import { createReplayRunner, describeReplayTarget, resolveReplayStartIndex } from "../../replay/service.js";
 import { createReplayTelemetryPublisher } from "../../replay/telemetry.js";
-import type { ReplayDatasetSummary, ReplayProgressSnapshot, ReplaySourceOption } from "../../replay/types.js";
+import type { ReplayDatasetSummary, ReplayProgressSnapshot, ReplaySourceOption, ReplayTimeMode } from "../../replay/types.js";
 import { color, writeCommandTitle, writeJson, writeSection } from "../output.js";
 import { CliError, getGlobalOptions, type IO } from "../runtime.js";
 
 const SUPPORTED_REPLAY_SOURCES: ReplaySourceOption[] = ["auto", "geojson-vessel-tracks"];
+const SUPPORTED_TIME_MODES: ReplayTimeMode[] = ["source", "live"];
 const SEEK_STEP_MS = 60 * 60 * 1000;
 
 function parsePositiveInteger(value: string, label: string): number {
@@ -37,6 +39,24 @@ function parseTimeout(value: string): number {
   return parsePositiveInteger(value, "timeout");
 }
 
+function parseDurationMs(value: string, label: string): number {
+  const trimmed = value.trim();
+  const match = trimmed.match(/^(\d+(?:\.\d+)?)(ms|s|m|h)?$/i);
+  if (!match) {
+    throw new CliError(`Invalid ${label}: ${value}`);
+  }
+
+  const amount = Number(match[1]);
+  const unit = (match[2] ?? "s").toLowerCase();
+  const multiplier = unit === "ms" ? 1 : unit === "s" ? 1000 : unit === "m" ? 60_000 : 3_600_000;
+  const parsed = Math.round(amount * multiplier);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new CliError(`Invalid ${label}: ${value}`);
+  }
+
+  return parsed;
+}
+
 function parsePort(value: string): number {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed <= 0 || parsed > 65535) {
@@ -52,6 +72,14 @@ function parseReplaySource(value: string): ReplaySourceOption {
   }
 
   throw new CliError(`Unsupported replay source: ${value}`);
+}
+
+function parseTimeMode(value: string): ReplayTimeMode {
+  if (SUPPORTED_TIME_MODES.includes(value as ReplayTimeMode)) {
+    return value as ReplayTimeMode;
+  }
+
+  throw new CliError(`Unsupported replay time mode: ${value}`);
 }
 
 function addReplaySharedOptions(command: Command): Command {
@@ -95,9 +123,17 @@ function describeDataset(dataset: ReplayDatasetSummary, startIndex: number, rawO
     `Features: ${dataset.totalFeatures}`,
     `Track points: ${dataset.trackPoints.length}`,
     `Skipped features: ${dataset.skippedFeatures}`,
+    `Interpolation: ${
+      dataset.interpolation
+        ? `every ${dataset.interpolation.intervalMs}ms (${dataset.interpolation.generatedTrackPoints} generated from ${dataset.interpolation.originalTrackPoints} original)`
+        : "disabled"
+    }`,
     `Range: ${dataset.startTime} to ${dataset.endTime} UTC`,
     `Start from: ${startTrackPoint.sourceTime}`,
     `Replay speed: ${rawOptions.speed}x`,
+    `Loop: ${rawOptions.loop || rawOptions.loopCount ? `enabled (${rawOptions.loopCount ?? "unbounded"})` : "disabled"}`,
+    `Loop delay: ${rawOptions.loopDelay ?? 0}ms`,
+    `Time mode: ${rawOptions.timeMode ?? "source"}`,
     `Max events: ${rawOptions.maxEvents ?? "(unbounded)"}`
   ];
 }
@@ -111,9 +147,10 @@ function renderProgress(snapshot: ReplayProgressSnapshot): string {
     snapshot.state === "running" && snapshot.paused
       ? "paused"
       : snapshot.state;
-  const time = snapshot.trackPoint?.sourceTime ?? "-";
+  const time = snapshot.effectiveSourceTime ?? snapshot.trackPoint?.sourceTime ?? "-";
   const uid = snapshot.trackPoint?.uid ?? "-";
-  return `Replay ${state} | sent=${snapshot.sentEvents} | source-time=${time} | uid=${uid}`;
+  const loop = snapshot.loopCount ? `${snapshot.currentLoop}/${snapshot.loopCount}` : `${snapshot.currentLoop}`;
+  return `Replay ${state} | sent=${snapshot.sentEvents} | loop=${loop} | source-time=${time} | uid=${uid}`;
 }
 
 function setupInteractiveControls(
@@ -201,6 +238,11 @@ export function createReplayCommand(io: IO): Command {
         )
         .addOption(new Option("--start-from <time>", "Use start, end, or an ISO-8601 source timestamp").default("start"))
         .addOption(new Option("--speed <factor>", "Replay speed multiplier").default("3600").argParser((value) => parsePositiveNumber(value, "speed")))
+        .addOption(new Option("--loop", "Restart from the selected start point after the final event"))
+        .addOption(new Option("--loop-count <n>", "Run exactly N replay passes").argParser((value) => parsePositiveInteger(value, "loop-count")))
+        .addOption(new Option("--loop-delay <duration>", "Delay between replay passes, e.g. 500ms, 10s, 2m").default("0s").argParser((value) => parseDurationMs(value, "loop-delay")))
+        .addOption(new Option("--time-mode <mode>", "Source time metadata mode").default("source").argParser(parseTimeMode))
+        .addOption(new Option("--interpolate <duration>", "Generate synthetic in-between points at this source-time interval, e.g. 30s, 1m").argParser((value) => parseDurationMs(value, "interpolate")))
         .addOption(new Option("--max-events <n>", "Stop after replaying N events").argParser((value) => parsePositiveInteger(value, "max-events")))
         .addOption(new Option("--stale-seconds <seconds>", "CoT stale window in seconds").default("300").argParser((value) => parsePositiveInteger(value, "stale-seconds")))
         .addOption(new Option("--cot-type <type>", "CoT type to emit").default("a-u-S-X-M"))
@@ -213,14 +255,22 @@ export function createReplayCommand(io: IO): Command {
             cotType: string;
             describe?: boolean;
             how: string;
+            interpolate?: number;
+            loop?: boolean;
+            loopCount?: number;
+            loopDelay: number;
             maxEvents?: number;
             source: ReplaySourceOption;
             speed: number;
             staleSeconds: number;
             startFrom: string;
+            timeMode: ReplayTimeMode;
           };
 
-          const dataset = await loadReplayDataset(pathArgument, rawOptions.source);
+          const loadedDataset = await loadReplayDataset(pathArgument, rawOptions.source);
+          const dataset = rawOptions.interpolate
+            ? interpolateReplayDataset(loadedDataset, rawOptions.interpolate)
+            : loadedDataset;
           const startIndex = resolveReplayStartIndex(dataset, rawOptions.startFrom);
           const describeProfile = rawOptions.describe
             ? (() => {
@@ -240,6 +290,7 @@ export function createReplayCommand(io: IO): Command {
                   detectedSource: dataset.detectedSource,
                   endTime: dataset.endTime,
                   filePath: dataset.filePath,
+                  interpolation: dataset.interpolation,
                   skippedFeatures: dataset.skippedFeatures,
                   startTime: dataset.startTime,
                   totalFeatures: dataset.totalFeatures,
@@ -294,6 +345,9 @@ export function createReplayCommand(io: IO): Command {
           const runner = createReplayRunner(dataset, {
             cotType: rawOptions.cotType,
             how: rawOptions.how,
+            loop: Boolean(rawOptions.loop || rawOptions.loopCount),
+            loopCount: rawOptions.loopCount,
+            loopDelayMs: rawOptions.loopDelay,
             maxEvents: rawOptions.maxEvents,
             onStateChange: (snapshot) => {
               void telemetry.onStateChange(snapshot);
@@ -303,6 +357,7 @@ export function createReplayCommand(io: IO): Command {
             speed: rawOptions.speed,
             staleSeconds: rawOptions.staleSeconds,
             startIndex,
+            timeMode: rawOptions.timeMode,
             timeoutMs: context.timeoutMs
           });
 
@@ -335,7 +390,9 @@ export function createReplayCommand(io: IO): Command {
               `Sent events: ${result.sentEvents}`,
               `Start from: ${result.startFromTime}`,
               `Last source time: ${result.finalTrackPointTime ?? "-"}`,
-              `Replay speed: ${result.speed}x`
+              `Replay speed: ${result.speed}x`,
+              `Loop: ${result.loop ? `enabled (${result.loopCount ?? "unbounded"})` : "disabled"}`,
+              `Time mode: ${result.timeMode}`
             ]);
           } catch (error) {
             await telemetry.onRunFailed();

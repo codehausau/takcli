@@ -12,6 +12,7 @@
     ".": "./dist/index.js"
   },
   "files": [
+    "assets",
     "dist",
     "README.md",
     "scripts/install.sh"

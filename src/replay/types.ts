@@ -8,6 +8,7 @@ export interface ReplayTrackPoint {
   course?: number;
   craftId?: string;
   draughtMeters?: number;
+  interpolated?: boolean;
   lat: number;
   lon: number;
   sourceTime: string;
@@ -21,11 +22,18 @@ export interface ReplayTrackPoint {
   lengthMeters?: number;
 }
 
+export interface ReplayInterpolationSummary {
+  generatedTrackPoints: number;
+  intervalMs: number;
+  originalTrackPoints: number;
+}
+
 export interface ReplayDatasetSummary {
   detectedSource: ReplaySourceName;
   endTime: string;
   endTimeMs: number;
   filePath: string;
+  interpolation?: ReplayInterpolationSummary;
   skippedFeatures: number;
   startTime: string;
   startTimeMs: number;
@@ -34,16 +42,25 @@ export interface ReplayDatasetSummary {
 }
 
 export interface ReplayProgressSnapshot {
+  currentLoop: number;
+  effectiveSourceTime?: string;
+  loopCount?: number;
   paused: boolean;
   pendingIndex?: number;
   sentEvents: number;
   state: "completed" | "idle" | "running" | "stopped";
+  timeMode: ReplayTimeMode;
   trackPoint?: ReplayTrackPoint;
 }
+
+export type ReplayTimeMode = "live" | "source";
 
 export interface ReplayRunOptions {
   cotType: string;
   how: string;
+  loop: boolean;
+  loopCount?: number;
+  loopDelayMs: number;
   maxEvents?: number;
   onEventSent?: (event: { bytesSent: number; sentEvents: number; trackPoint: ReplayTrackPoint }) => void;
   onStateChange?: (snapshot: ReplayProgressSnapshot) => void;
@@ -51,6 +68,7 @@ export interface ReplayRunOptions {
   speed: number;
   staleSeconds: number;
   startIndex: number;
+  timeMode: ReplayTimeMode;
   timeoutMs: number;
 }
 
@@ -60,11 +78,15 @@ export interface ReplayRunResult {
     detectedSource: ReplaySourceName;
     endTime: string;
     filePath: string;
+    interpolation?: ReplayInterpolationSummary;
     startTime: string;
     totalFeatures: number;
     trackPoints: number;
   };
   finalTrackPointTime?: string;
+  loop: boolean;
+  loopCount?: number;
+  loopDelayMs: number;
   maxEvents?: number;
   profile: ResolvedProfile;
   sentEvents: number;
@@ -72,6 +94,7 @@ export interface ReplayRunResult {
   startedAt: string;
   state: "completed" | "stopped";
   startFromTime: string;
+  timeMode: ReplayTimeMode;
 }
 
 export interface ReplayTelemetryProfile {
@@ -82,6 +105,7 @@ export interface ReplayTelemetryProfile {
 
 export interface ReplayTelemetrySnapshot {
   completedAt?: string;
+  currentLoop: number;
   currentSourceTime?: string;
   currentUid?: string;
   dataset: {

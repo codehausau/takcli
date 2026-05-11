@@ -15,15 +15,16 @@ import type {
 
 const POLL_INTERVAL_MS = 100;
 
-function buildReplayRemarks(trackPoint: ReplayTrackPoint): string {
+function buildReplayRemarks(trackPoint: ReplayTrackPoint, sourceTime: string): string {
   const parts = [
-    `Source time: ${trackPoint.sourceTime}`,
+    `Source time: ${sourceTime}`,
     trackPoint.type ? `Type: ${trackPoint.type}` : undefined,
     trackPoint.subtype ? `Subtype: ${trackPoint.subtype}` : undefined,
     trackPoint.lengthMeters !== undefined ? `Length: ${trackPoint.lengthMeters}m` : undefined,
     trackPoint.beamMeters !== undefined ? `Beam: ${trackPoint.beamMeters}m` : undefined,
     trackPoint.draughtMeters !== undefined ? `Draught: ${trackPoint.draughtMeters}m` : undefined,
     trackPoint.craftId ? `Craft ID: ${trackPoint.craftId}` : undefined,
+    trackPoint.interpolated ? "Interpolated: yes" : undefined,
     "Source: replay file"
   ];
 
@@ -74,6 +75,12 @@ export function resolveReplayStartIndex(dataset: ReplayDatasetSummary, startFrom
 class ReplayRunnerImpl implements ReplayRunner {
   private currentIndex: number;
 
+  private currentLoop = 1;
+
+  private liveLoopAnchorMs: number | undefined;
+
+  private lastSentEffectiveSourceTime: string | undefined;
+
   private lastSentTrackPoint: ReplayTrackPoint | undefined;
   private paused = false;
 
@@ -90,15 +97,21 @@ class ReplayRunnerImpl implements ReplayRunner {
     private readonly options: ReplayRunOptions
   ) {
     this.currentIndex = options.startIndex;
+    this.liveLoopAnchorMs = this.createLiveLoopAnchorMs();
   }
 
   getSnapshot(): ReplayProgressSnapshot {
+    const trackPoint = this.dataset.trackPoints[this.currentIndex];
     return {
+      currentLoop: this.currentLoop,
+      effectiveSourceTime: trackPoint ? this.getEffectiveSourceTime(trackPoint) : undefined,
+      loopCount: this.options.loopCount,
       paused: this.paused,
       pendingIndex: this.pendingIndex,
       sentEvents: this.sentEvents,
       state: this.state,
-      trackPoint: this.dataset.trackPoints[this.currentIndex]
+      timeMode: this.options.timeMode,
+      trackPoint
     };
   }
 
@@ -162,6 +175,7 @@ class ReplayRunnerImpl implements ReplayRunner {
         }
 
         const trackPoint = this.dataset.trackPoints[this.currentIndex]!;
+        const effectiveSourceTime = this.getEffectiveSourceTime(trackPoint);
         const xml = buildCotEventXml(
           {
             callsign: trackPoint.callsign,
@@ -172,7 +186,7 @@ class ReplayRunnerImpl implements ReplayRunner {
             lat: trackPoint.lat,
             le: 9999999,
             lon: trackPoint.lon,
-            remarks: buildReplayRemarks(trackPoint),
+            remarks: buildReplayRemarks(trackPoint, effectiveSourceTime),
             speed: trackPoint.speedMetersPerSecond,
             staleSeconds: this.options.staleSeconds,
             type: this.options.cotType,
@@ -183,6 +197,7 @@ class ReplayRunnerImpl implements ReplayRunner {
         const bytesSent = await writer.send(xml);
         this.sentEvents += 1;
         this.lastSentTrackPoint = trackPoint;
+        this.lastSentEffectiveSourceTime = effectiveSourceTime;
         this.options.onEventSent?.({
           bytesSent,
           sentEvents: this.sentEvents,
@@ -198,7 +213,11 @@ class ReplayRunnerImpl implements ReplayRunner {
         }
 
         if (this.currentIndex >= this.dataset.trackPoints.length - 1) {
-          break;
+          if (!(await this.advanceLoopOrFinish())) {
+            break;
+          }
+
+          continue;
         }
 
         const nextTrackPoint = this.dataset.trackPoints[this.currentIndex + 1]!;
@@ -241,19 +260,58 @@ class ReplayRunnerImpl implements ReplayRunner {
         detectedSource: this.dataset.detectedSource,
         endTime: this.dataset.endTime,
         filePath: this.dataset.filePath,
+        interpolation: this.dataset.interpolation,
         startTime: this.dataset.startTime,
         totalFeatures: this.dataset.totalFeatures,
         trackPoints: this.dataset.trackPoints.length
       },
-      finalTrackPointTime: this.lastSentTrackPoint?.sourceTime,
+      finalTrackPointTime: this.lastSentEffectiveSourceTime ?? this.lastSentTrackPoint?.sourceTime,
+      loop: this.options.loop,
+      loopCount: this.options.loopCount,
+      loopDelayMs: this.options.loopDelayMs,
       maxEvents: this.options.maxEvents,
       profile: this.options.profile,
       sentEvents: this.sentEvents,
       speed: this.options.speed,
       startedAt,
       startFromTime: this.dataset.trackPoints[this.options.startIndex]!.sourceTime,
-      state: this.stopRequested ? "stopped" : "completed"
+      state: this.stopRequested ? "stopped" : "completed",
+      timeMode: this.options.timeMode
     };
+  }
+
+  private async advanceLoopOrFinish(): Promise<boolean> {
+    if (!this.options.loop) {
+      return false;
+    }
+
+    if (this.options.loopCount !== undefined && this.currentLoop >= this.options.loopCount) {
+      return false;
+    }
+
+    if (this.options.loopDelayMs > 0) {
+      let remainingDelayMs = this.options.loopDelayMs;
+      while (remainingDelayMs > 0 && !this.stopRequested) {
+        if (this.paused) {
+          await delay(POLL_INTERVAL_MS);
+          continue;
+        }
+
+        const sleepMs = Math.min(POLL_INTERVAL_MS, remainingDelayMs);
+        await delay(sleepMs);
+        remainingDelayMs -= sleepMs;
+      }
+    }
+
+    if (this.stopRequested) {
+      return false;
+    }
+
+    this.currentLoop += 1;
+    this.currentIndex = this.options.startIndex;
+    this.liveLoopAnchorMs = this.createLiveLoopAnchorMs();
+    this.emitStateChange();
+    return true;
   }
 
   private applyPendingIndex(): boolean {
@@ -269,6 +327,24 @@ class ReplayRunnerImpl implements ReplayRunner {
 
   private emitStateChange(): void {
     this.options.onStateChange?.(this.getSnapshot());
+  }
+
+  private createLiveLoopAnchorMs(): number | undefined {
+    if (this.options.timeMode !== "live") {
+      return undefined;
+    }
+
+    return Date.now();
+  }
+
+  private getEffectiveSourceTime(trackPoint: ReplayTrackPoint): string {
+    if (this.options.timeMode === "source") {
+      return trackPoint.sourceTime;
+    }
+
+    const anchorMs = this.liveLoopAnchorMs ?? Date.now();
+    const startMs = this.dataset.trackPoints[this.options.startIndex]!.sourceTimeMs;
+    return new Date(anchorMs + (trackPoint.sourceTimeMs - startMs)).toISOString();
   }
 }
 

@@ -93,6 +93,14 @@ async function readMilsymbolAsset(relativePath: string): Promise<Buffer> {
   return Buffer.from(await readFile(buildMilsymbolAssetUrl(relativePath)));
 }
 
+function buildMapAssetUrl(relativePath: string): URL {
+  return new URL(`../../assets/map/${relativePath}`, import.meta.url);
+}
+
+async function readMapAsset(relativePath: string): Promise<Buffer> {
+  return Buffer.from(await readFile(buildMapAssetUrl(relativePath)));
+}
+
 function getContentType(pathname: string): string {
   if (pathname.endsWith(".css")) {
     return "text/css; charset=utf-8";
@@ -676,6 +684,16 @@ async function handleStaticRequest(
 
   if (url.pathname === "/company-logo.svg") {
     writeText(response, 200, buildPlaceholderLogoSvg(context.logoLabel), "image/svg+xml; charset=utf-8");
+    return;
+  }
+
+  if (url.pathname === "/takcli-logo.png") {
+    writeBuffer(response, 200, await readMapAsset("takcli-logo.png"), "image/png");
+    return;
+  }
+
+  if (url.pathname === "/codehaus.png") {
+    writeBuffer(response, 200, await readMapAsset("codehaus.png"), "image/png");
     return;
   }
 

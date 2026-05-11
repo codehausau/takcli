@@ -244,6 +244,8 @@ describe("Map server", () => {
     expect(shellResponse.status).toBe(200);
     expect(shellHtml).toContain("Acme TAK Console");
     expect(shellHtml).toContain("Company Logo Slot");
+    expect(shellHtml).toContain("/takcli-logo.png");
+    expect(shellHtml).toContain("TAKCLI");
     expect(shellHtml).toContain("/leaflet.js");
     expect(shellHtml).toContain("/milsymbol.js");
     expect(shellHtml).toContain("Marker Symbology");
@@ -251,6 +253,10 @@ describe("Map server", () => {
     expect(shellHtml).toContain("Primary workflow:");
     expect(shellHtml).toContain("secondary inspection and demo mode");
     expect(shellHtml).toContain("Source pending");
+    expect(shellHtml).toContain("Hide Sidebar");
+    expect(shellHtml).toContain("aria-controls=\"map-sidebar\"");
+    expect(shellHtml).toContain("Powered by");
+    expect(shellHtml).toContain("/codehaus.png");
     expect(shellHtml).toContain("Layers");
     expect(shellHtml).toContain("Live markers");
     expect(shellHtml).toContain("Live tracks");
@@ -276,6 +282,7 @@ describe("Map server", () => {
     expect(appJs).toContain("TAK Lookup");
     expect(appJs).toContain("TAK Event Time");
     expect(appJs).toContain("Overlay Time");
+    expect(appJs).toContain("sidebar-hidden");
     expect(appJs).toContain("XMC---");
     expect(appJs).toContain("XMT---");
     expect(appJs).toContain("XL----");
@@ -348,6 +355,14 @@ describe("Map server", () => {
     const logoResponse = await fetch(`${server.url}/company-logo.svg`);
     const logoText = await logoResponse.text();
     expect(logoText).toContain("Acme Placeholder");
+
+    const takCliLogoResponse = await fetch(`${server.url}/takcli-logo.png`);
+    expect(takCliLogoResponse.headers.get("content-type")).toContain("image/png");
+    expect((await takCliLogoResponse.arrayBuffer()).byteLength).toBeGreaterThan(1000);
+
+    const codehausLogoResponse = await fetch(`${server.url}/codehaus.png`);
+    expect(codehausLogoResponse.headers.get("content-type")).toContain("image/png");
+    expect((await codehausLogoResponse.arrayBuffer()).byteLength).toBeGreaterThan(1000);
 
     const eventsResponse = await fetch(`${server.url}/api/events`);
     const eventStreamText = await eventsResponse.text();
@@ -539,9 +554,11 @@ describe("Map server", () => {
     });
     await publisher.initialize();
     await publisher.onStateChange({
+      currentLoop: 1,
       paused: false,
       sentEvents: 7,
       state: "running",
+      timeMode: "source",
       trackPoint: dataset.trackPoints[1]
     });
 
