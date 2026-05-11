@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/codehausau/takcli/compare/takcli-v0.11.1...takcli-v0.12.0) (2026-05-11)
+
+
+### Features
+
+* polish TAKCLI map demo ([4060b48](https://github.com/codehausau/takcli/commit/4060b48c104d139d531f22344852ae16c09d7c3a))
+
 ## [0.11.1](https://github.com/codehausau/takcli/compare/takcli-v0.11.0...takcli-v0.11.1) (2026-05-04)
 
 
